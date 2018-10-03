@@ -1,0 +1,7 @@
+#!/bin/bash
+
+cp ../Oracle.fst .
+sed -i -e 's/let oraclePubKey = ""/let oraclePubKey = "02add2eb8158d81b7ea51e35ddde9c8a95e24449bdab8391f40c5517bdb9a3e117"/g' Oracle.fst
+zebra.exe -c Oracle.fst
+zebra.exe -r test_add.fsx
+zebra.exe -r test_verify.fsx
