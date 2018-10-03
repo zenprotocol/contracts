@@ -107,6 +107,19 @@ let rec tryMap #a #b #n f ls = //20
       | _ -> OT.none end
   | [] -> [] |> OT.incSome (length ls * (n+20))
 
+val exists_ (#a:Type)(#n:nat):
+    (a -> bool `cost` n)
+    -> ls: list a
+    -> bool `cost` (length ls * (n + 13) + 13)
+let rec exists_ #_ #n f ls = //13
+    match ls with
+    | hd::tl ->
+        ( let! test = f hd in
+          let! rest = exists_ f tl in
+          ret (test || rest) )
+        <: bool `cost` (length ls * (n+13))
+    | [] -> ret false
+
 // gets a hash from the message body
 let getHash (messageBody: option data): option hash `cost` 77 = //7
     messageBody >!= tryDict //4
@@ -197,51 +210,51 @@ val verifyAuditPath: hash
     -> (index: U32.t)
     -> (roots: list hash{length roots <= backLogLength})
     -> (auditPath: list hash{length auditPath <= 31})
-    -> bool `cost` (13043 * backLogLength + 19)
+    -> bool `cost` (13050 * backLogLength + 26)
 let verifyAuditPath h index roots auditPath = //13
-    begin List.anyT (verifyAuditPath' auditPath index h) roots //l roots * 13037 + 6
+    begin exists_ (verifyAuditPath' auditPath index h) roots //l roots * (13037 + 13) + 13
     // increment to give this function constant cost
-    |> inc (13043 * (backLogLength - length roots))
-    end <: bool `cost` (13043 * backLogLength + 6)
+    |> inc (13050 * (backLogLength - length roots))
+    end <: bool `cost` (13050 * backLogLength + 13)
 
 // when invoked with a hash, audit path, and audit path index,
 // verifies that the provided hash is included in
 // one of the merkle trees in the backlog.
 let verify (txSkel: txSkeleton) (messageBody: option data) (state: option data)
-           : CR.t `cost` (13082 * backLogLength + 1646) = //56
+           : CR.t `cost` (13089 * backLogLength + 1653) = //56
     let! hash = getHash messageBody in //77
     let! index = getIndex messageBody in //77
     let! auditPath = getAuditPath messageBody in //1350
     let! roots = getRoots state in // 39 * backLogLength + 64
     match hash, index, auditPath, roots with
     | Some hash, Some index, Some auditPath, Some roots ->
-        if! verifyAuditPath hash index roots auditPath then //(13043 * backLogLength) + 19)
+        if! verifyAuditPath hash index roots auditPath then //(13050 * backLogLength) + 26)
             CR.ofTxSkel txSkel //3
         else "Verification failed" |> RT.incFailw 3
     | None, _, _, _ ->
         "Message body must contain Hash"
-        |> RT.incFailw (13043 * backLogLength + 22)
+        |> RT.incFailw (13050 * backLogLength + 29)
     | Some _, None, _, _ ->
         "Message body must contain valid Index"
-        |> RT.incFailw (13043 * backLogLength + 22)
+        |> RT.incFailw (13050 * backLogLength + 29)
     | Some _, Some _, None, _ ->
         "Message body must contain valid AuditPath"
-        |> RT.incFailw (13043 * backLogLength + 22)
+        |> RT.incFailw (13050 * backLogLength + 29)
     | Some _, Some _, Some _, None ->
         "Something went wrong! could not get roots from state!"
-        |> RT.incFailw (13043 * backLogLength + 22)
+        |> RT.incFailw (13050 * backLogLength + 29)
 
 let main (txSkel: txSkeleton) _ (contractId: contractId) (command: string)
          (sender: sender) (messageBody: option data) (wallet: wallet)
          (state: option data)
          : CR.t `cost` ( match command with
-                         | "Verify" -> 13082 * backLogLength + 1654
+                         | "Verify" -> 13089 * backLogLength + 1661
                          | "Add" -> 17 * backLogLength + 406
                          | _ -> 8 ) = //8
     begin match command with
     | "Verify" -> verify txSkel messageBody state
                   <: (CR.t `cost` ( match command with
-                                  | "Verify" -> 13082 * backLogLength + 1646
+                                  | "Verify" -> 13089 * backLogLength + 1653
                                   | "Add" -> 17 * backLogLength + 398
                                   | _ -> 0 ))
     | "Add" -> add txSkel contractId sender messageBody state // 17 * backLogLength + 398
@@ -253,6 +266,6 @@ let main (txSkel: txSkeleton) _ (contractId: contractId) (command: string)
 
 let cf _ _ command _ _ _ _ = ret ((
     match command with
-    | "Verify" -> 13082 * backLogLength + 1654 <: nat
+    | "Verify" -> 13089 * backLogLength + 1661 <: nat
     | "Add" -> 17 * backLogLength + 406
     | _ -> 8) <: nat)
