@@ -23,10 +23,10 @@ module TX = Zen.TxSkeleton
 module U64 = FStar.UInt64
 module Wallet = Zen.Wallet
 
-let oracleContractID = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+let oracleContractID = "00000000ca055cc0af4d25ea1c8bbbf41444aadd68a168558397516b2f64727d87e72f97"
 let ticker = "AMD"
 let strike = 65000UL // USD price multiplied by 1000
-let unixtime = 0UL
+let unixtime = 	1539264654UL
 
 // gets a return Address from the message body
 val getReturnAddress: option data -> option lock `cost` 77

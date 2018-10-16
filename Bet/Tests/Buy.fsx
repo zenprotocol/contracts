@@ -1,3 +1,4 @@
+#load "Bet.fsx"
 open Consensus
 open Infrastructure
 open Crypto
@@ -5,57 +6,15 @@ open Types
 open Zen.Types.Data
 open Zen.Data
 open Zen.Types
+open Bet
 module Cost = Zen.Cost.Realized
-
-let contractHashHex = "741eea77a769fc1beedd5ecf20415bd3ad32404c9511bab44d2d8792f5ec3dc8"
-
-let contractHash = Hash.fromString contractHashHex
-                   |> Result.get
-
-// hex encoding of ascii value of "Bull"
-let bullHex = "42756c6c"
-// hex encoding of ascii value of "Bear"
-let bearHex = "42656172"
-
-let bullTokenHex = "00000000"
-                   + contractHashHex
-                   + bullHex
-                   + "00000000000000000000000000000000000000000000000000000000"
-let bearTokenHex = "00000000"
-                   + contractHashHex
-                   + bearHex
-                   + "00000000000000000000000000000000000000000000000000000000"
-
-let bullToken = Asset.fromString bullTokenHex
-                |> Option.get
-let bearToken = Asset.fromString bearTokenHex
-                |> Option.get
-
-let contractID = ContractId (Version0, contractHash)
-
-let contractFn' = System.Reflection.Assembly.LoadFrom "output/Bet.dll"
-                  |> Contract.getFunctions
-                  |> Result.get
-                  |> fst
-// don't care about context, contractID, command, sender, wallet or state
-let contractFn (txSkeleton: TxSkeleton.T) messageBody =
-    contractFn' txSkeleton
-                {blockNumber=1ul;timestamp=0UL}
-                contractID
-                "Buy"
-                Anonymous
-                messageBody
-                []
-                None
-
-// Empty transaction
-let emptyTxSkeleton : TxSkeleton.T = TxSkeleton.empty
+module Tx = TxSkeleton
 
 // all spends in the input
 let rec inputSpends = function
     | input::inputs ->
         match input with
-        | TxSkeleton.PointedOutput (_, output) ->
+        | Tx.PointedOutput (_, output) ->
             output.spend :: inputSpends inputs
         | _ ->
             inputSpends inputs
@@ -68,7 +27,7 @@ let outputSpends = List.map (fun output -> output.spend)
 let rec inputSpendsLockedToContract = function
     | input::inputs ->
         match input with
-        | TxSkeleton.PointedOutput (_, output)
+        | Tx.PointedOutput (_, output)
           when output.lock = Contract contractID ->
             output.spend :: inputSpendsLockedToContract inputs
         | _ ->
@@ -84,7 +43,7 @@ let outputSpendsLockedToContract =
 let rec inputSpendsLockedToReturnAddressPK returnAddressPK = function
     | input::inputs ->
         match input with
-        | TxSkeleton.PointedOutput (_, output)
+        | Tx.PointedOutput (_, output)
           when output.lock = PK returnAddressPK ->
             output.spend :: inputSpendsLockedToReturnAddressPK returnAddressPK inputs
         | _ ->
@@ -100,7 +59,7 @@ let outputSpendsLockedToReturnAddressPK returnAddressPK =
 let rec getMints = function
     | input::inputs ->
         match input with
-        | TxSkeleton.Mint spend ->
+        | Tx.Mint spend ->
             spend::getMints inputs
         | _ ->
             getMints inputs
@@ -121,29 +80,12 @@ let totalBearToken spends =
     spends |> List.filter (fun spend -> spend.asset = bearToken)
            |> List.sumBy (fun spend -> spend.amount)
 
-// a messageBody with no return address
-let noReturnAddress: data option = None
-
-let returnAddressPK = Hash.zero
-
-let returnAddress = PK returnAddressPK
-                    |> ZFStar.fsToFstLock
-                    |> Lock
-
-// a messageBody consisting of only a return address
-let onlyReturnAddress =
-    Zen.Dictionary.add "returnAddress"B returnAddress Zen.Dictionary.empty
-    |> Cost.__force
-    |> Dict
-    |> Collection
-    |> Some
-
 
 //////////////////////////////////////////////////////////////////////////
 // Buy without returnAddress fails
 //////////////////////////////////////////////////////////////////////////
 
-match contractFn emptyTxSkeleton noReturnAddress with
+match buy emptyTx emptyMessageBody with
 | Error "Could not parse returnAddress from messageBody" ->
     printfn "OK: Buy without returnAddress fails"
 | Ok _ -> failwith "Should not return ok without returnAddress"
@@ -154,11 +96,11 @@ match contractFn emptyTxSkeleton noReturnAddress with
 // Should mint 0 bull & bear tokens and spends them to returnAddress
 //////////////////////////////////////////////////////////////////////////
 
-match contractFn emptyTxSkeleton onlyReturnAddress with
+match buy emptyTx onlyReturnAddress with
 | Ok ({pInputs=pInputs; outputs=outputs}, None, Main.NoChange) -> // expect no message or state update
     // check inputs
     match pInputs with
-    | [TxSkeleton.Mint mint0; TxSkeleton.Mint mint1] ->
+    | [Tx.Mint mint0; Tx.Mint mint1] ->
         if mint0.amount <> 0UL
             then failwithf "Expected mint 0 to have amount 0, but got: `%A`" mint0
         if mint0.asset <> bullToken
@@ -209,14 +151,9 @@ match contractFn emptyTxSkeleton onlyReturnAddress with
 // Should mint 50 bull & bear tokens and spend them to returnAddress
 //////////////////////////////////////////////////////////////////////////
 
-let singleInputTxSkeleton =
-    let outpoint = {txHash=Hash.zero; index=0u}
-    let spend = {asset=Asset.Zen; amount=50UL}
-    let output = {lock=Contract contractID; spend=spend}
-    { TxSkeleton.pInputs=[TxSkeleton.PointedOutput (outpoint, output)];
-      TxSkeleton.outputs=[] }
+let singleInputTx = mkTx [mkInput (Contract contractID) zp 50UL] []
 
-match contractFn singleInputTxSkeleton onlyReturnAddress with
+match buy singleInputTx onlyReturnAddress with
 | Ok ({pInputs=pInputs; outputs=outputs}, None, Main.NoChange) -> // expect no message or state update
     // inputs
     let inputMints = getMints pInputs
@@ -296,15 +233,15 @@ match contractFn singleInputTxSkeleton onlyReturnAddress with
 // Should mint 150 bull & bear tokens and spend them to returnAddress
 //////////////////////////////////////////////////////////////////////////
 
-let multiInputTxSkeleton =
+let multiInputTx =
     let outpoint = {txHash=Hash.zero; index=0u}
     let spend x = {asset=Asset.Zen; amount=x}
     let output x = {lock=Contract contractID; spend=spend x}
-    let pInput x = TxSkeleton.PointedOutput (outpoint, output x)
+    let pInput x = Tx.PointedOutput (outpoint, output x)
     let pInputs = [pInput 40UL; pInput 20UL; pInput 50UL; pInput 30UL; pInput 10UL]
-    { TxSkeleton.pInputs=pInputs; TxSkeleton.outputs=[] }
+    { Tx.pInputs=pInputs; Tx.outputs=[] }
 
-match contractFn multiInputTxSkeleton onlyReturnAddress with
+match buy multiInputTx onlyReturnAddress with
 | Ok ({pInputs=pInputs; outputs=outputs}, None, Main.NoChange) -> // expect no message or state update
     // inputs
     let inputMints = getMints pInputs
