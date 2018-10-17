@@ -15,7 +15,7 @@ module Contract = Consensus.Contract
 module ContractId = Consensus.ContractId
 module Hash = Consensus.Hash
 module Result = Infrastructure.Result
-module Tx = Consensus.TxSkeleton
+module Tx = Consensus.TxSkeleton 
 module Types = Consensus.Types
 
 let betDLL    = "../output/Bet.dll"
@@ -33,11 +33,11 @@ let cmd_bet_RedeemBull = "RedeemBull"
 (*
     HELPER FUNCTIONS
 *)
-let convertContractId contractId =
-    match contractId with
-    | Types.ContractId (v,h) ->
-        match h with
-        | Hash.Hash h' -> (v,h') 
+//let convertContractId contractId =
+//    match contractId with
+//    | Types.ContractId (v,h) ->
+//        match h with
+//        | Hash.Hash h' -> (v,h') 
         
 let loadContract dll =
     let fs = System.Reflection.Assembly.LoadFrom dll |> Contract.getFunctions |> Result.get
@@ -131,7 +131,7 @@ let txResult, command, proof =
 *)
 match oracle_main txResult context oracle_id command oracle_operatorPK proof emptyWallet commitedState with
     | Ok (tx, _, _) ->
-        if tx = txResult
+        if tx = txResult && (tx |> ZFStar.fsToFstTxSkeleton |> Zen.TxSkeleton.isValid |> Zen.Cost.Realized.__force)
             then printfn "OK: The transaction has succeeded"
             else failwith "The transaction has failed" 
     | Error err -> failwith err

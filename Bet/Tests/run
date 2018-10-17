@@ -1,0 +1,8 @@
+#!/bin/bash
+
+#zebra.exe --z3rlimit 8000000 -c Oracle.fst
+#zebra.exe --z3rlimit 3500000 -c ../Bet.fst
+#zebra.exe -r Buy.fsx
+#zebra.exe -r RedeemBull.fsx
+
+zebra.exe -r ChainedContracts.fsx
