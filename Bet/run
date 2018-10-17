@@ -1,0 +1,7 @@
+#!/bin/bash
+
+cd zebra.exe --z3rlimit 3500000 -c ../Bet.fst
+zebra.exe -r Buy.fsx
+zebra.exe -r RedeemBull.fsx
+
+../../Oracle/run
