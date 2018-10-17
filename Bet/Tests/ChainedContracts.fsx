@@ -17,6 +17,7 @@ module Hash = Consensus.Hash
 module Result = Infrastructure.Result
 module Tx = Consensus.TxSkeleton 
 module Types = Consensus.Types
+module Merkle = Consensus.MerkleTree
 
 let betDLL    = "../output/Bet.dll"
 let oracleDLL = "../../Oracle/Tests/output/Oracle.dll"
@@ -33,30 +34,28 @@ let cmd_bet_RedeemBull = "RedeemBull"
 (*
     HELPER FUNCTIONS
 *)
-//let convertContractId contractId =
-//    match contractId with
-//    | Types.ContractId (v,h) ->
-//        match h with
-//        | Hash.Hash h' -> (v,h') 
         
 let loadContract dll =
     let fs = System.Reflection.Assembly.LoadFrom dll |> Contract.getFunctions |> Result.get
     in match fs with | main, _ -> main
 
-let mkIndexedData' returnAddress time ticker price (Hash.Hash hash) index =
+let mkMerkleData' returnAddress time ticker price (Hash.Hash hash) index auditPath =
     addToDict ("returnAddress"B, returnAddress) emptyDict
     |> addU64 ("Time"B, time)
     |> addString ("Ticker"B, ticker)
     |> addU64 ("Price"B, price)
     |> addHash ("Hash"B, hash)
     |> addU32 ("Index"B, index)
-    |> addList ("AuditPath"B, ZFStar.fsToFstList [])
+    |> addList ("AuditPath"B, ZFStar.fsToFstList auditPath)
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
 
-let mkIndexedData returnAddress time ticker price index =
-    mkIndexedData' returnAddress time ticker price (hashParams time ticker price) index
+let mkMerkleData returnAddress time ticker price index auditPath =
+    mkMerkleData' returnAddress time ticker price (hashParams time ticker price) index auditPath
+
+let datahash (Hash.Hash hash) = Data.Hash hash
+
 
 (*
     INITIALIZE GENERAL PARAMETERS
@@ -68,18 +67,32 @@ let emptyWallet : list<PointedOutput> = []
 let context = {blockNumber=1ul;timestamp=0UL}
 
 // Commitment
-    
-let okData = mkIndexedData returnAddress unixtime ticker strike 0u
+
+let poiHash = hashParams unixtime ticker strike
+
+let otherHash =
+       "123xyz"B
+    |> Hash.compute
+    |> Hash.bytes
+    |> Hash.Hash
 
 let tx1Bull = mkTx [(mkInput contractLock bullToken 1UL)] []
 
+let hashes = [poiHash; otherHash]
+
+let merkleRoot = Merkle.computeRoot hashes
+
 let commitment =
-    match (hashParams unixtime ticker strike) with
+    match merkleRoot with
     | Hash.Hash hash -> Some (Zen.Types.Data.Hash hash)
-//           addHash ("Hash"B, hash) emptyDict
-//        |> Zen.Types.Data.Dict
-//        |> Zen.Types.Data.Collection
-//        |> Some
+
+let poiIndex = 0u
+
+let auditPath =
+       Merkle.createAuditPath hashes (Checked.int poiIndex)
+    |> List.map datahash
+
+let okData = mkMerkleData returnAddress unixtime ticker strike poiIndex auditPath
 
 // Empty transaction
 let tx : Tx.T = Tx.empty
@@ -116,7 +129,6 @@ let commitedState =
 (*
     REDEEM BULL TOKEN
 *)
-
 let txResult, command, proof =
     match redeemBull tx1Bull okData wallet50ZP with
     | Ok (tx, optmsg, _) ->
