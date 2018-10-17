@@ -18,6 +18,8 @@ type Outpoint = Types.Outpoint
 type Output = Types.Output
 type Spend = Types.Spend
 
+let contractDLL = "../output/Bet.dll"
+
 let u64Bytes (u64: uint64) =
     let bytes = System.BitConverter.GetBytes u64
     if System.BitConverter.IsLittleEndian
@@ -96,7 +98,7 @@ let oracleContractID = "00000000ca055cc0af4d25ea1c8bbbf41444aadd68a168558397516b
                        |> ContractId.fromString
                        |> Option.get
 
-let getRawCode() = System.IO.File.ReadAllText "Bet.fst"
+let getRawCode() = System.IO.File.ReadAllText "../Bet.fst"
 
 let contractID = getRawCode()
                  |> Contract.makeContractId Types.Version0
@@ -131,8 +133,10 @@ let emptyDict = Zen.Dictionary.empty
 let addToDict (key, value) dict = Zen.Dictionary.add key value dict
                                   |> Zen.Cost.Realized.__force
 let addU64 (key, value) = addToDict (key, Zen.Types.Data.U64 value)
+let addU32 (key, value) = addToDict (key, Zen.Types.Data.U32 value)
 let addString (key, value) = addToDict (key, Zen.Types.Data.String value)
 let addHash (key, value) = addToDict (key, Zen.Types.Data.Hash value)
+let addList (key, value) = addToDict (key, Zen.Types.Data.Collection (Zen.Types.Data.List value))
 
 let mkData' returnAddress time ticker price (Hash.Hash hash) =
     addToDict ("returnAddress"B, returnAddress) emptyDict
@@ -153,7 +157,7 @@ let onlyReturnAddress =
     |> Some
 
 let hashParams'' time ticker price =
-    (System.Reflection.Assembly.LoadFrom "output/Bet.dll")
+    (System.Reflection.Assembly.LoadFrom contractDLL)
         .GetModules().[0]  // Should get ModuleName.dll
         .GetTypes().[0]    // Should get ModuleName
         .GetMethod("hashParams") // ModuleName.name
@@ -199,7 +203,7 @@ let wallet150ZP = // wallet with multiple inputs totalling 150ZP
     let (Tx.PointedOutput p4) = mkInput contractLock zp 40UL
     [p0; p1; p2; p3; p4]
 
-let contractFn = System.Reflection.Assembly.LoadFrom "output/Bet.dll"
+let contractFn = System.Reflection.Assembly.LoadFrom contractDLL
                  |> Contract.getFunctions
                  |> Result.get
                  |> fst
