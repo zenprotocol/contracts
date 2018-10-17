@@ -85,7 +85,7 @@ let checkBearCondition (messageBody: option data) = let open U64 in //66
     let! dict = messageBody >!= tryDict in //4
     let! msgTime = dict >!= D.tryFind "Time" //64
                         >?= tryU64 in //2
-    let! msgticker = dict >!= D.tryFind "ticker" //64
+    let! msgticker = dict >!= D.tryFind "Ticker" //64
                               >?= tryString in //2
     let! msgPrice = dict >!= D.tryFind "Price" //64
                          >?= tryU64 in //2
