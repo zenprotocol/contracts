@@ -14,7 +14,7 @@ open Zen.Types
 module Asset = Zen.Asset
 module CID = Zen.ContractId
 module CR = Zen.ContractResult
-module D  = Zen.Dictionary
+module Dict  = Zen.Dictionary
 module Hash = Zen.Hash
 module OT = Zen.OptionT
 module RT = Zen.ResultT
@@ -26,195 +26,162 @@ module Wallet = Zen.Wallet
 let oracleContractID = "00000000ca055cc0af4d25ea1c8bbbf41444aadd68a168558397516b2f64727d87e72f97"
 let ticker = "AMD"
 let strike = 65000UL // USD price multiplied by 1000
-let unixtime = 	1539264654UL
+let time = 1539264654UL
 
-// gets a return Address from the message body
-val getReturnAddress: option data -> option lock `cost` 77
-let getReturnAddress messageBody = //7
-    messageBody >!= tryDict //4
-                >?= D.tryFind "returnAddress" //64
-                >?= tryLock //2
+type messageParams = {
+    price: U64.t;
+    returnAddress: lock
+}
 
-val hashParams:
-    time:U64.t
-    -> ticker:string{String.length ticker <= 4}
-    -> price:U64.t
-    -> hash `cost` 812
-let hashParams time ticker price = let open Hash in //36
-    let! timeHash = updateU64 time empty //48
-                    >>= finalize in //20
+val getReturnAddress: option (Dict.t data) -> option lock `cost` 71
+let getReturnAddress dict = // 5
+    dict >!= Dict.tryFind "returnAddress" // 64
+         >?= tryLock // 2
+
+val getPrice: option (Dict.t data) -> option U64.t `cost` 71
+let getPrice dict = // 5
+    dict >!= Dict.tryFind "Price" // 64
+         >?= tryU64 // 2
+
+val getParams: option (Dict.t data) -> result messageParams `cost` 161
+let getParams dict = // 19
+    let! msgPrice = getPrice dict in // 71
+    let! returnAddress = getReturnAddress dict in // 71
+    match msgPrice, returnAddress with
+    | Some msgPrice, Some returnAddress ->
+        RT.ok ({ price=msgPrice; returnAddress=returnAddress })
+    | None, _ ->
+        RT.failw "Could not parse Price from messageBody"
+    | _, None ->
+        RT.failw "Could not parse returnAddress from messageBody"
+
+val hashData: U64.t -> hash `cost` 812
+let hashData price = let open Hash in // 36
+    let! timeHash = updateU64 time empty // 48
+                    >>= finalize in // 20
     let! tickerHash = begin updateString ticker empty
                       |> inc (6 * (4 - String.length ticker)) //24
                       >>= finalize //20
                       end <: hash `cost` 44 in //20
-    let! priceHash = updateU64 price empty //48
-                     >>= finalize in //20
+    let! priceHash = updateU64 price empty // 48
+                     >>= finalize in // 20
 
-    updateHash timeHash empty //192
-    >>= updateHash tickerHash //192
-    >>= updateHash priceHash //192
-    >>= finalize //20
+    updateHash timeHash empty // 192
+    >>= updateHash tickerHash // 192
+    >>= updateHash priceHash // 192
+    >>= finalize // 20
 
-
-val checkBullCondition: messageBody: option data -> bool `cost` 1146
-let checkBullCondition (messageBody: option data) = let open U64 in //66
-    let! dict = messageBody >!= tryDict in //4
-    let! msgTime = dict >!= D.tryFind "Time" //64
-                        >?= tryU64 in //2
-    let! msgTicker = dict >!= D.tryFind "Ticker" //64
-                          >?= tryString in //2
-    let! msgPrice = dict >!= D.tryFind "Price" //64
-                         >?= tryU64 in //2
-    let! msgHash = dict >!= D.tryFind "Hash" //64
-                        >?= tryHash in //2
-    match msgTime, msgTicker, msgPrice, msgHash with
-    | Some msgTime, Some msgTicker, Some msgPrice, Some msgHash ->
-        if msgTicker = ticker
-        && msgTime = unixtime
-        && msgPrice >=^ strike
-        then begin
-            let! hash = hashParams msgTime msgTicker msgPrice in //812
-            ret (hash = msgHash)
-            end
-        else autoRet false
-    | _ -> autoRet false
-
-
-val checkBearCondition: messageBody: option data -> bool `cost` 1146
-let checkBearCondition (messageBody: option data) = let open U64 in //66
-    let! dict = messageBody >!= tryDict in //4
-    let! msgTime = dict >!= D.tryFind "Time" //64
-                        >?= tryU64 in //2
-    let! msgticker = dict >!= D.tryFind "Ticker" //64
-                              >?= tryString in //2
-    let! msgPrice = dict >!= D.tryFind "Price" //64
-                         >?= tryU64 in //2
-    let! msgHash = dict >!= D.tryFind "Hash" //64
-                        >?= tryHash in //2
-    match msgTime, msgticker, msgPrice, msgHash with
-    | Some msgTime, Some msgticker, Some msgPrice, Some msgHash ->
-        if msgticker = ticker
-        && msgTime = unixtime
-        && msgPrice <^ strike
-        then begin
-            let! hash = hashParams msgTime msgticker msgPrice in //812
-            ret (hash = msgHash)
-            end
-        else autoRet false
-    | _ -> autoRet false
-
-val buy: txSkeleton -> contractId -> messageBody: option data -> CR.t `cost` 634
-let buy txSkeleton contractId messageBody = //42
-    let! returnAddress = getReturnAddress messageBody in //77
+val buy: txSkeleton -> contractId -> messageBody: option data -> CR.t `cost` 635
+let buy tx contractId messageBody = // 45
+    let! returnAddress = messageBody >!= tryDict // 4
+                                     >>= getReturnAddress in // 71
     match returnAddress with
     | Some returnAddress ->
-        let! bullToken = Asset.fromSubtypeString contractId "Bull" in //64
-        let! bearToken = Asset.fromSubtypeString contractId "Bear" in //64
+        let! bullToken = Asset.fromSubtypeString contractId "Bull" in // 64
+        let! bearToken = Asset.fromSubtypeString contractId "Bear" in // 64
         // the amount of ZP available
-        let! amount = TX.getAvailableTokens Asset.zenAsset txSkeleton in //64
+        let! amount = TX.getAvailableTokens Asset.zenAsset tx in // 64
         // lock all available ZP to this contract
-        TX.lockToContract Asset.zenAsset amount contractId txSkeleton //64
+        TX.lockToContract Asset.zenAsset amount contractId tx // 64
         // mint an equivalent amount of bull and bear tokens
-        >>= TX.mint amount bullToken //64
-        >>= TX.mint amount bearToken //64
+        >>= TX.mint amount bullToken // 64
+        >>= TX.mint amount bearToken // 64
         // lock bull and bear tokens to the returnAddress
-        >>= TX.lockToAddress bullToken amount returnAddress //64
-        >>= TX.lockToAddress bearToken amount returnAddress //64
-        >>= CR.ofTxSkel //3
+        >>= TX.lockToAddress bullToken amount returnAddress // 64
+        >>= TX.lockToAddress bearToken amount returnAddress // 64
+        >>= CR.ofTxSkel // 3
     | None -> RT.autoFailw "Could not parse returnAddress from messageBody"
 
-val redeemBull:
+val oracleMessage: U64.t -> Dict.t data -> contractId -> message `cost` 892
+let oracleMessage price dict oracleContractID = // 16
+    let! hash = hashData price in // 812
+    let! dict = Dict.add "Hash" (Hash hash) dict in // 64
+    ret ({ recipient=oracleContractID;
+           command="Verify";
+           body=Some(Collection (Dict dict)) })
+
+// invokes the oracle to validate inclusion of the message
+val oracleCheck:
+    U64.t
+    -> option (Dict.t data)
+    -> option txSkeleton
+    -> CR.t `cost` 987
+let oracleCheck price dict tx = // 31
+    let! oracleContractID = CID.parse oracleContractID in // 64
+    match dict, oracleContractID, tx with
+    | Some dict, Some oracleContractID, Some tx ->
+        let! msg = oracleMessage price dict oracleContractID in // 892
+        RT.ok ({ tx=tx; message=Some msg; state=NoChange })
+    | None, _, _ ->
+        RT.autoFailw "Something went wrong! messageBody should not be empty"
+    | _, None, _ ->
+        RT.autoFailw "Something went wrong! could not parse oracleContractID"
+    | _, _, None ->
+        RT.autoFailw "Could not construct tx from wallet"
+
+val redeemTx:
+    asset
+    -> txSkeleton
+    -> contractId
+    -> messageParams
+    -> option (Dict.t data)
+    -> w: wallet
+    -> CR.t `cost` (Wallet.size w * 128 + 1395)
+let redeemTx contractAsset tx contractID messageParams dict wallet = // 24
+    // amount of the contract asset received
+    let! amount = TX.getAvailableTokens contractAsset tx in // 64
+    // destroy the contract asset received
+    begin TX.destroy amount contractAsset tx // 64
+    // send the same amount of ZP to the returnAddress
+    >>= TX.lockToAddress Asset.zenAsset amount messageParams.returnAddress // 64
+    >>= TX.fromWallet Asset.zenAsset amount contractID wallet // 128 * size wallet + 192
+    <: (option txSkeleton `cost` (Wallet.size wallet * 128 + 320)) end
+    // check with the oracle
+    >>= oracleCheck messageParams.price dict // 987
+
+val redeem:
     txSkeleton
     -> contractId
-    -> oracleContractID: contractId
-    -> returnAddress: lock
     -> messageBody: option data
     -> wallet: wallet
-    -> CR.t `cost` (Wallet.size wallet * 128 + 1635)
-let redeemBull txSkeleton contractId oracleContractID returnAddress messageBody wallet = //35
-    // message to invoke the oracle contract with
-    let message = { recipient=oracleContractID;
-                    command="Verify";
-                    body=messageBody } in
-    // check that the bull condition occured
-    if! checkBullCondition messageBody then begin //1146
-    let! bullToken = Asset.fromSubtypeString contractId "Bull" in //64
-    // amount of bull tokens received
-    let! amount = TX.getAvailableTokens bullToken txSkeleton in //64
-    // destroy the bull tokens received
-    TX.destroy amount bullToken txSkeleton //64
-    // send the same amount of ZP to the returnAddress
-    >>= TX.lockToAddress Asset.zenAsset amount returnAddress //64
-    >>= TX.fromWallet Asset.zenAsset amount contractId wallet // 128 * size wallet + 192
-    >>= CR.ofOptionTxSkel "Cound not construct tx from wallet" //3
-    >>= CR.setMessage message //3
-    end <: (CR.t `cost` (Wallet.size wallet * 128 + 454))
-    else RT.incFailw (Wallet.size wallet * 128 + 454) "Invalid message body"
+    -> CR.t `cost` (Wallet.size wallet * 128 + 1652)
+let redeem tx contractID messageBody wallet = let open U64 in // 28
+    let! dict = messageBody >!= tryDict in // 4
+    let! messageParams = getParams dict in // 161
+    match messageParams with
+    | OK messageParams -> begin
+        let! winningAsset = begin //64
+            if messageParams.price >=^ strike
+            then Asset.fromSubtypeString contractID "Bull"
+            else Asset.fromSubtypeString contractID "Bear"
+            end in
+        redeemTx winningAsset tx contractID messageParams dict wallet // Wallet.size w * 128 + 1395
+        end <: CR.t `cost` (Wallet.size wallet * 128 + 1459)
+    | ERR msg ->
+        RT.incFailw (Wallet.size wallet * 128 + 1459) msg
+    | _ ->
+        RT.incFailw (Wallet.size wallet * 128 + 1459) "Something went wrong! unexpected error"
 
-val redeemBear:
-    txSkeleton
-    -> contractId
-    -> oracleContractID: contractId
-    -> returnAddress: lock
-    -> messageBody: option data
-    -> wallet: wallet
-    -> CR.t `cost` (Wallet.size wallet * 128 + 1635)
-let redeemBear txSkeleton contractId oracleContractID returnAddress messageBody wallet =
-    // message to invoke the oracle contract with
-    let message = { recipient=oracleContractID;
-                    command="Verify";
-                    body=messageBody } in
-    // check that the bear condition occured
-    if! checkBearCondition messageBody then begin //1146
-    let! bearToken = Asset.fromSubtypeString contractId "Bear" in //64
-    // amount of bear tokens received
-    let! amount = TX.getAvailableTokens bearToken txSkeleton in //64
-    // destroy the bear tokens received
-    TX.destroy amount bearToken txSkeleton //64
-    // send the same amount of ZP to the returnAddress
-    >>= TX.lockToAddress Asset.zenAsset amount returnAddress //64
-    >>= TX.fromWallet Asset.zenAsset amount contractId wallet // 128 * size wallet + 192
-    >>= CR.ofOptionTxSkel "Cound not construct tx from wallet" //3
-    >>= CR.setMessage message //3
-    end <: (CR.t `cost` (Wallet.size wallet * 128 + 454))
-    else RT.incFailw (Wallet.size wallet * 128 + 454) "Invalid message body"
-
-let main (txSkeleton: txSkeleton) _ (contractId: contractId) (command: string)
-         _ (messageBody: option data) (wallet: wallet) _
+let main (tx: txSkeleton) _ (contractID: contractId) (command: string) _
+         (messageBody: option data) (wallet: wallet) _
          : CR.t `cost` ( match command with
-                         | "Buy" -> 657
-                         | "RedeemBear"
-                         | "RedeemBull" -> Wallet.size wallet * 128 + 1799
-                         | _ -> 23 ) = //23
+                         | "Buy" -> 642
+                         | "Redeem" -> Wallet.size wallet * 128 + 1659
+                         | _ -> 7 ) = // 7
     match command with
-    | "Buy" -> buy txSkeleton contractId messageBody
-               <: (CR.t `cost` ( match command with
-                                 | "Buy" -> 634
-                                 | "RedeemBear"
-                                 | "RedeemBull" -> Wallet.size wallet * 128 + 1776
-                                 | _ -> 0 ))
-    | "RedeemBear" ->
-        let! returnAddress = getReturnAddress messageBody in //77
-        let! oracleContractID = CID.parse oracleContractID in //64
-        begin match returnAddress, oracleContractID with
-        | Some returnAddress, Some oracleContractID ->
-            redeemBear txSkeleton contractId oracleContractID returnAddress messageBody wallet
-            // Wallet.size wallet * 128 + 1635
-        | _ -> RT.autoFailw "Something went wrong! could not parse returnAddress/oracleContractID"
-        end
-    | "RedeemBull" ->
-        let! returnAddress = getReturnAddress messageBody in //77
-        let! oracleContractID = CID.parse oracleContractID in //64
-        begin match returnAddress, oracleContractID with
-        | Some returnAddress, Some oracleContractID ->
-            redeemBull txSkeleton contractId oracleContractID returnAddress messageBody wallet
-            // Wallet.size wallet * 128 + 1635
-        | _ -> RT.autoFailw "Something went wrong! could not parse returnAddress/oracleContractID"
-        end
-    | _ -> RT.failw "Invalid command specified"
+    | "Buy" ->
+        buy tx contractID messageBody
+        <: (CR.t `cost` ( match command with
+                          | "Buy" -> 635
+                          | "Redeem" -> Wallet.size wallet * 128 + 1652
+                          | _ -> 0 ))
+    | "Redeem" ->
+        redeem tx contractID messageBody wallet
+    | _ ->
+        RT.failw "Invalid command"
 
-let cf _ _ (command: string) _ _ (wallet: wallet) _ : nat `cost` 10 = //10
+let cf _ _ (command: string) _ _ (wallet: wallet) _ : nat `cost` 9 = // 9
     match command with
-    | "Buy" -> ret 657
-    | "RedeemBear" | "RedeemBull" -> ret (Wallet.size wallet * 128 + 1799)
-    | _ -> ret 23
+    | "Buy" -> ret 642
+    | "Redeem" -> ret (Wallet.size wallet * 128 + 1659)
+    | _ -> ret 7

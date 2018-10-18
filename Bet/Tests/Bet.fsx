@@ -89,7 +89,7 @@ let hasLock (lock: Types.Lock) (output: Output) = output.lock = lock
 (*                                   *)
 
 let ticker = "AMD"B
-let unixtime = 1539264654UL
+let time = 1539264654UL
 let strike = 65000UL // USD price multiplied by 1000
 
 let oracleContractID = "00000000ca055cc0af4d25ea1c8bbbf41444aadd68a168558397516b2f64727d87e72f97"
@@ -131,15 +131,11 @@ let emptyDict = Zen.Dictionary.empty
 let addToDict (key, value) dict = Zen.Dictionary.add key value dict
                                   |> Zen.Cost.Realized.__force
 let addU64 (key, value) = addToDict (key, Zen.Types.Data.U64 value)
-let addString (key, value) = addToDict (key, Zen.Types.Data.String value)
 let addHash (key, value) = addToDict (key, Zen.Types.Data.Hash value)
 
-let mkData' returnAddress time ticker price (Hash.Hash hash) =
+let mkData returnAddress price =
     addToDict ("returnAddress"B, returnAddress) emptyDict
-    |> addU64 ("Time"B, time)
-    |> addString ("Ticker"B, ticker)
     |> addU64 ("Price"B, price)
-    |> addHash ("Hash"B, hash)
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
@@ -152,30 +148,33 @@ let onlyReturnAddress =
     |> Zen.Types.Data.Collection
     |> Some
 
-let hashParams'' time ticker price =
+let onlyPrice =
+    addU64 ("Price"B, strike) Zen.Dictionary.empty
+    |> Zen.Types.Data.Dict
+    |> Zen.Types.Data.Collection
+    |> Some
+
+let hashData'' price =
     (System.Reflection.Assembly.LoadFrom "output/Bet.dll")
         .GetModules().[0]  // Should get ModuleName.dll
         .GetTypes().[0]    // Should get ModuleName
-        .GetMethod("hashParams") // ModuleName.name
-        .Invoke(null, [|time; ticker; price|])
+        .GetMethod("hashData") // ModuleName.name
+        .Invoke(null, [|price|])
     :?> (Zen.Cost.Realized.cost<Zen.Types.Extracted.hash,unit>)
 
 
-let hashParams' (time: uint64) ticker (price: uint64) =
-    let h = hashParams'' time ticker price
+let hashData' (price: uint64) =
+    let h = hashData'' price
             |> Zen.Cost.Realized.__force
             |> Hash.Hash
     printfn "%A" h
     h
 
-let hashParams (time: uint64) ticker (price: uint64) =
+let hashParams (price: uint64) =
      [ Hash.compute (u64Bytes time)
        Hash.compute ticker
        Hash.compute (u64Bytes price) ]
      |> Hash.joinHashes
-
-let mkData returnAddress time ticker price =
-    mkData' returnAddress time ticker price (hashParams time ticker price)
 
 let wallet50ZP = // wallet with one 50ZP input
     let (Tx.PointedOutput p) = mkInput contractLock zp 50UL
@@ -216,22 +215,11 @@ let buy (txSkeleton: Tx.T) messageBody =
                None
 
 // don't care about context, contractID, command, sender, or state
-let redeemBull (txSkeleton: Tx.T) messageBody wallet =
+let redeem (txSkeleton: Tx.T) messageBody wallet =
     contractFn txSkeleton
                {blockNumber=1ul;timestamp=0UL}
                contractID
-               "RedeemBull"
-               Types.Anonymous
-               messageBody
-               wallet
-               None
-
-// don't care about context, contractID, command, sender, or state
-let redeemBear (txSkeleton: Tx.T) messageBody wallet =
-    contractFn txSkeleton
-               {blockNumber=1ul;timestamp=0UL}
-               contractID
-               "RedeemBear"
+               "Redeem"
                Types.Anonymous
                messageBody
                wallet
