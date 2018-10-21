@@ -15,7 +15,7 @@ module Contract   = Consensus.Contract
 module ContractId = Consensus.ContractId
 module Hash       = Consensus.Hash
 module Result     = Infrastructure.Result
-module Tx         = Consensus.TxSkeleton 
+module Tx         = Consensus.TxSkeleton
 module Types      = Consensus.Types
 module Merkle     = Consensus.MerkleTree
 
@@ -31,7 +31,7 @@ let otherLeafData = "123xyz"B
 let cmd_oracle_Add    = "Add"
 let cmd_oracle_Verify = "Verify"
 let cmd_bet_Buy       = "Buy"
-let cmd_bet_Redeem    = "Redeem" 
+let cmd_bet_Redeem    = "Redeem"
 //let cmd_bet_RedeemBear = "RedeemBear" // remove (replace with redeem)
 //let cmd_bet_RedeemBull = "RedeemBull" // remove (replace with redeem)
 
@@ -68,7 +68,7 @@ let mkBetData' returnAddress ticker price (Hash.Hash hash) index auditPath =
 let mkBetData returnAddress ticker price index auditPath =
     mkBetData' returnAddress ticker price (hashParams price) index auditPath
 
-// Convert Consensus.Hash to Types.Data 
+// Convert Consensus.Hash to Types.Data
 let datahash (Hash.Hash hash) = Data.Hash hash
 
 
@@ -86,7 +86,7 @@ let tx1Bull = mkTx [mkInput contractLock bullToken 1UL] []
 
 (*
     BUILDING MERKLE TREE
-    Creating a Merkle tree with 2 leaves:   /\ 
+    Creating a Merkle tree with 2 leaves:   /\
                                            x o
 *)
 
@@ -111,7 +111,7 @@ let commitment =
     match merkleRoot with
     | Hash.Hash hash -> Some (Zen.Types.Data.Hash hash)
 
-// Index of the point of intereset's leaf 
+// Index of the point of intereset's leaf
 let poiIndex = 0u
 
 // Path to the point of intereset's leaf
@@ -132,7 +132,7 @@ let initState : data option = None
 (*
     PREPARE ORACLE
 *)
-let oracle_main = loadContract oracleDLL 
+let oracle_main = loadContract oracleDLL
 
 // Contract ID
 let oracle_id = System.IO.File.ReadAllText oracleSrc |> Contract.makeContractId Types.Version0
@@ -173,5 +173,5 @@ match oracle_main txResult context oracle_id command oracle_operatorPK proof emp
     | Ok (tx, _, _) ->
         if tx = txResult && (tx |> ZFStar.fsToFstTxSkeleton |> Zen.TxSkeleton.isValid |> Zen.Cost.Realized.__force)
             then printfn "OK: The transaction has succeeded"
-            else failwith "The transaction has failed" 
+            else failwith "The transaction has failed"
     | Error err -> failwith err
