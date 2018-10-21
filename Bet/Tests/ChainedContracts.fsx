@@ -10,50 +10,64 @@ open Zen.Types.Data
 open Zen.Data
 open Zen.Types
 
-module Asset = Consensus.Asset
-module Contract = Consensus.Contract
+module Asset      = Consensus.Asset
+module Contract   = Consensus.Contract
 module ContractId = Consensus.ContractId
-module Hash = Consensus.Hash
-module Result = Infrastructure.Result
-module Tx = Consensus.TxSkeleton 
-module Types = Consensus.Types
-module Merkle = Consensus.MerkleTree
+module Hash       = Consensus.Hash
+module Result     = Infrastructure.Result
+module Tx         = Consensus.TxSkeleton 
+module Types      = Consensus.Types
+module Merkle     = Consensus.MerkleTree
 
 let betDLL    = "../output/Bet.dll"
 let oracleDLL = "../../Oracle/Tests/output/Oracle.dll"
 let oracleSrc = "../../Oracle/Oracle.fst"
 let betSrc    = "../Bet.fst"
 
+let operatorId = "02add2eb8158d81b7ea51e35ddde9c8a95e24449bdab8391f40c5517bdb9a3e117"
+
+let otherLeafData = "123xyz"B
+
 let cmd_oracle_Add     = "Add"
 let cmd_oracle_Verify  = "Verify"
 let cmd_bet_Buy        = "Buy"
-let cmd_bet_RedeemBear = "RedeemBear"
-let cmd_bet_RedeemBull = "RedeemBull"
+let cmd_bet_RedeemBear = "RedeemBear" // remove (replace with redeem)
+let cmd_bet_RedeemBull = "RedeemBull" // remove (replace with redeem)
+
+let key_returnAddress = "returnAddress"B
+let key_Time          = "Time"B // remove
+let key_Ticker        = "Ticker"B // remove
+let key_Price         = "Price"B
+let key_Hash          = "Hash"B // remove
+let key_Index         = "Index"B
+let key_AuditPath     = "AuditPath"B
 
 
 (*
     HELPER FUNCTIONS
 *)
-        
+// Load contract's main function
 let loadContract dll =
     let fs = System.Reflection.Assembly.LoadFrom dll |> Contract.getFunctions |> Result.get
     in match fs with | main, _ -> main
 
-let mkMerkleData' returnAddress time ticker price (Hash.Hash hash) index auditPath =
-    addToDict ("returnAddress"B, returnAddress) emptyDict
-    |> addU64 ("Time"B, time)
-    |> addString ("Ticker"B, ticker)
-    |> addU64 ("Price"B, price)
-    |> addHash ("Hash"B, hash)
-    |> addU32 ("Index"B, index)
-    |> addList ("AuditPath"B, ZFStar.fsToFstList auditPath)
+// Bet contract data
+let mkBetData' returnAddress time ticker price (Hash.Hash hash) index auditPath =
+    addToDict (key_returnAddress, returnAddress) emptyDict
+    |> addU64 (key_Time, time)
+    |> addString (key_Ticker, ticker)
+    |> addU64 (key_Price, price)
+    |> addHash (key_Hash, hash)
+    |> addU32 (key_Index, index)
+    |> addList (key_AuditPath, ZFStar.fsToFstList auditPath)
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
 
-let mkMerkleData returnAddress time ticker price index auditPath =
-    mkMerkleData' returnAddress time ticker price (hashParams time ticker price) index auditPath
+let mkBetData returnAddress time ticker price index auditPath =
+    mkBetData' returnAddress time ticker price (hashParams time ticker price) index auditPath
 
+// Convert Consensus.Hash to Types.Data 
 let datahash (Hash.Hash hash) = Data.Hash hash
 
 
@@ -66,33 +80,46 @@ let emptyWallet : list<PointedOutput> = []
 // Arbitrary context
 let context = {blockNumber=1ul;timestamp=0UL}
 
-// Commitment
+// Transaction with 1 bull token
+let tx1Bull = mkTx [mkInput contractLock bullToken 1UL] []
 
+(*
+    BUILDING MERKLE TREE
+    Creating a Merkle tree with 2 leaves:   /\ 
+                                           x o
+*)
+
+// Point of interest hash (the left leaf)
 let poiHash = hashParams unixtime ticker strike
 
+// Other hash (the right leaf)
 let otherHash =
-       "123xyz"B
+       otherLeafData
     |> Hash.compute
     |> Hash.bytes
     |> Hash.Hash
 
-let tx1Bull = mkTx [(mkInput contractLock bullToken 1UL)] []
-
+// List of leaves
 let hashes = [poiHash; otherHash]
 
+// Merkle root
 let merkleRoot = Merkle.computeRoot hashes
 
+// Commitment on the merkle root
 let commitment =
     match merkleRoot with
     | Hash.Hash hash -> Some (Zen.Types.Data.Hash hash)
 
+// Index of the point of intereset's leaf 
 let poiIndex = 0u
 
+// Path to the point of intereset's leaf
 let auditPath =
        Merkle.createAuditPath hashes (Checked.int poiIndex)
     |> List.map datahash
 
-let okData = mkMerkleData returnAddress unixtime ticker strike poiIndex auditPath
+// Create good bet contract data
+let okData = mkBetData returnAddress unixtime ticker strike poiIndex auditPath
 
 // Empty transaction
 let tx : Tx.T = Tx.empty
@@ -111,7 +138,7 @@ let oracle_id = System.IO.File.ReadAllText oracleSrc |> Contract.makeContractId 
 
 // Oracle operator identity
 let (Crypto.PublicKey oracle_operatorPK') =
-    "02add2eb8158d81b7ea51e35ddde9c8a95e24449bdab8391f40c5517bdb9a3e117"
+       operatorId
     |> FsBech32.Base16.decode
     |> Option.bind PublicKey.deserialize
     |> Option.get
