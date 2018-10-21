@@ -19,7 +19,7 @@ module Tx         = Consensus.TxSkeleton
 module Types      = Consensus.Types
 module Merkle     = Consensus.MerkleTree
 
-let betDLL    = "../output/Bet.dll"
+let betDLL    = "output/Bet.dll"
 let oracleDLL = "../../Oracle/Tests/output/Oracle.dll"
 let oracleSrc = "../../Oracle/Oracle.fst"
 let betSrc    = "../Bet.fst"
@@ -32,14 +32,9 @@ let cmd_oracle_Add    = "Add"
 let cmd_oracle_Verify = "Verify"
 let cmd_bet_Buy       = "Buy"
 let cmd_bet_Redeem    = "Redeem"
-//let cmd_bet_RedeemBear = "RedeemBear" // remove (replace with redeem)
-//let cmd_bet_RedeemBull = "RedeemBull" // remove (replace with redeem)
 
 let key_returnAddress = "returnAddress"B
-//let key_Time          = "Time"B // remove
-//let key_Ticker        = "Ticker"B // remove
 let key_Price         = "Price"B
-//let key_Hash          = "Hash"B // remove
 let key_Index         = "Index"B
 let key_AuditPath     = "AuditPath"B
 
@@ -55,10 +50,7 @@ let loadContract dll =
 // Bet contract data
 let mkBetData' returnAddress ticker price (Hash.Hash hash) index auditPath =
     addToDict (key_returnAddress, returnAddress) emptyDict
-//    |> addU64 (key_Time, time)
-//    |> addString (key_Ticker, ticker)
     |> addU64 (key_Price, price)
-//    |> addHash (key_Hash, hash)
     |> addU32 (key_Index, index)
     |> addList (key_AuditPath, ZFStar.fsToFstList auditPath)
     |> Zen.Types.Data.Dict
@@ -111,6 +103,11 @@ let commitment =
     match merkleRoot with
     | Hash.Hash hash -> Some (Zen.Types.Data.Hash hash)
 
+// False commitment on the merkle root
+let falseCommitment =
+    match otherHash with
+    | Hash.Hash hash -> Some (Zen.Types.Data.Hash hash)
+
 // Index of the point of intereset's leaf
 let poiIndex = 0u
 
@@ -146,13 +143,6 @@ let (Crypto.PublicKey oracle_operatorPK') =
 
 let oracle_operatorPK = Main.PK oracle_operatorPK'
 
-// Add commitment to the oracle
-let commitedState =
-    match oracle_main tx context oracle_id cmd_oracle_Add oracle_operatorPK commitment emptyWallet initState with
-    | Ok (_, _, Main.Update state) -> Some state //when state = ([ someHash ] |> ZFStar.fsToFstList |> Data.List |> Data.Collection) -> ()
-    | Ok _ -> None
-    | Error err -> failwith err
-
 
 (*
     REDEEM BULL TOKEN
@@ -167,11 +157,68 @@ let txResult, command, proof =
 
 
 (*
-    VERIFY TRANSACTION
+    FUNCTION TO ADD COMMITMENTS AND VERIFY THE TRANSACTION
 *)
-match oracle_main txResult context oracle_id command oracle_operatorPK proof emptyWallet commitedState with
+let rec addCommitsAndVerify' commits lastState =
+    match commits with
+    | [] -> oracle_main txResult context oracle_id command oracle_operatorPK proof emptyWallet lastState
+    | commit :: commits ->
+        let state = match oracle_main tx context oracle_id cmd_oracle_Add oracle_operatorPK commit emptyWallet lastState with
+            | Ok (_, _, Main.Update state) -> Some state
+            | Ok _ -> None
+            | Error err -> failwith err
+        in addCommitsAndVerify' commits state
+
+let addCommitsAndVerify commits = addCommitsAndVerify' commits initState
+
+
+(*
+    TESTS
+*)
+printfn "Testing with a single commitment in the oracle... (should SUCCEED)"
+match addCommitsAndVerify [commitment] with
     | Ok (tx, _, _) ->
         if tx = txResult && (tx |> ZFStar.fsToFstTxSkeleton |> Zen.TxSkeleton.isValid |> Zen.Cost.Realized.__force)
             then printfn "OK: The transaction has succeeded"
-            else failwith "The transaction has failed"
+            else failwith "FAIL: The transaction has failed"
+    | Error err -> failwith err
+
+printfn "Testing with 2 identical commitment in the oracle... (should SUCCEED)"
+match addCommitsAndVerify [commitment; commitment] with
+    | Ok (tx, _, _) ->
+        if tx = txResult && (tx |> ZFStar.fsToFstTxSkeleton |> Zen.TxSkeleton.isValid |> Zen.Cost.Realized.__force)
+            then printfn "OK: The transaction has succeeded"
+            else failwith "FAIL: The transaction has failed"
+    | Error err -> failwith err
+
+printfn "Testing with no commitment in the oracle... (should FAIL)"
+match addCommitsAndVerify [] with
+    | Ok (tx, _, _) ->
+        if tx = txResult && (tx |> ZFStar.fsToFstTxSkeleton |> Zen.TxSkeleton.isValid |> Zen.Cost.Realized.__force)
+            then failwith "FAIL: The transaction has succeeded"
+            else failwith "FAIL: Something unexpected has happened"
+    | Error err -> printfn "OK: The transaction has failed"
+
+printfn "Testing with a false commitment in the oracle... (should FAIL)"
+match addCommitsAndVerify [falseCommitment] with
+    | Ok (tx, _, _) ->
+        if tx = txResult && (tx |> ZFStar.fsToFstTxSkeleton |> Zen.TxSkeleton.isValid |> Zen.Cost.Realized.__force)
+            then failwith "FAIL: The transaction has succeeded"
+            else failwith "FAIL: Something unexpected has happened"
+    | Error err -> printfn "OK: The transaction has failed"
+
+printfn "Testing with a commitment followed by a false commitment... (should SUCCEED)"
+match addCommitsAndVerify [commitment; falseCommitment] with
+    | Ok (tx, _, _) ->
+        if tx = txResult && (tx |> ZFStar.fsToFstTxSkeleton |> Zen.TxSkeleton.isValid |> Zen.Cost.Realized.__force)
+            then printfn "OK: The transaction has succeeded"
+            else failwith "FAIL: The transaction has failed"
+    | Error err -> failwith err
+
+printfn "Testing with a false commitment followed by a commitment... (should SUCCEED)"
+match addCommitsAndVerify [falseCommitment; commitment] with
+    | Ok (tx, _, _) ->
+        if tx = txResult && (tx |> ZFStar.fsToFstTxSkeleton |> Zen.TxSkeleton.isValid |> Zen.Cost.Realized.__force)
+            then printfn "OK: The transaction has succeeded"
+            else failwith "FAIL: The transaction has failed"
     | Error err -> failwith err
