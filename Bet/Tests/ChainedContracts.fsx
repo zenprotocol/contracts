@@ -155,7 +155,6 @@ let txResult, cmd_oracle_Verify, proof =
 let rec addCommitsToOracle commits lastState =
     match commits with
     | [] -> lastState
-        // oracle_main txResult context oracle_id cmd_oracle_Verify oracle_operatorPK proof emptyWallet lastState
     | commit :: commits ->
         let state =
             match oracle_main tx context oracle_id cmd_oracle_Add oracle_operatorPK commit emptyWallet lastState with
