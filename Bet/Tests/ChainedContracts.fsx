@@ -28,17 +28,18 @@ let operatorId = "02add2eb8158d81b7ea51e35ddde9c8a95e24449bdab8391f40c5517bdb9a3
 
 let otherLeafData = "123xyz"B
 
-let cmd_oracle_Add     = "Add"
-let cmd_oracle_Verify  = "Verify"
-let cmd_bet_Buy        = "Buy"
-let cmd_bet_RedeemBear = "RedeemBear" // remove (replace with redeem)
-let cmd_bet_RedeemBull = "RedeemBull" // remove (replace with redeem)
+let cmd_oracle_Add    = "Add"
+let cmd_oracle_Verify = "Verify"
+let cmd_bet_Buy       = "Buy"
+let cmd_bet_Redeem    = "Redeem" 
+//let cmd_bet_RedeemBear = "RedeemBear" // remove (replace with redeem)
+//let cmd_bet_RedeemBull = "RedeemBull" // remove (replace with redeem)
 
 let key_returnAddress = "returnAddress"B
-let key_Time          = "Time"B // remove
-let key_Ticker        = "Ticker"B // remove
+//let key_Time          = "Time"B // remove
+//let key_Ticker        = "Ticker"B // remove
 let key_Price         = "Price"B
-let key_Hash          = "Hash"B // remove
+//let key_Hash          = "Hash"B // remove
 let key_Index         = "Index"B
 let key_AuditPath     = "AuditPath"B
 
@@ -52,20 +53,20 @@ let loadContract dll =
     in match fs with | main, _ -> main
 
 // Bet contract data
-let mkBetData' returnAddress time ticker price (Hash.Hash hash) index auditPath =
+let mkBetData' returnAddress ticker price (Hash.Hash hash) index auditPath =
     addToDict (key_returnAddress, returnAddress) emptyDict
-    |> addU64 (key_Time, time)
-    |> addString (key_Ticker, ticker)
+//    |> addU64 (key_Time, time)
+//    |> addString (key_Ticker, ticker)
     |> addU64 (key_Price, price)
-    |> addHash (key_Hash, hash)
+//    |> addHash (key_Hash, hash)
     |> addU32 (key_Index, index)
     |> addList (key_AuditPath, ZFStar.fsToFstList auditPath)
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
 
-let mkBetData returnAddress time ticker price index auditPath =
-    mkBetData' returnAddress time ticker price (hashParams time ticker price) index auditPath
+let mkBetData returnAddress ticker price index auditPath =
+    mkBetData' returnAddress ticker price (hashParams price) index auditPath
 
 // Convert Consensus.Hash to Types.Data 
 let datahash (Hash.Hash hash) = Data.Hash hash
@@ -90,7 +91,7 @@ let tx1Bull = mkTx [mkInput contractLock bullToken 1UL] []
 *)
 
 // Point of interest hash (the left leaf)
-let poiHash = hashParams unixtime ticker strike
+let poiHash = hashParams strike
 
 // Other hash (the right leaf)
 let otherHash =
@@ -119,7 +120,7 @@ let auditPath =
     |> List.map datahash
 
 // Create good bet contract data
-let okData = mkBetData returnAddress unixtime ticker strike poiIndex auditPath
+let okData = mkBetData returnAddress ticker strike poiIndex auditPath
 
 // Empty transaction
 let tx : Tx.T = Tx.empty
@@ -157,7 +158,7 @@ let commitedState =
     REDEEM BULL TOKEN
 *)
 let txResult, command, proof =
-    match redeemBull tx1Bull okData wallet50ZP with
+    match redeem tx1Bull okData wallet50ZP with
     | Ok (tx, optmsg, _) ->
         match optmsg with
         | Some msg -> tx, msg.command, msg.body

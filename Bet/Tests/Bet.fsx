@@ -162,12 +162,12 @@ let hashParams'' time ticker price =
     :?> (Zen.Cost.Realized.cost<Zen.Types.Extracted.hash,unit>)
 
 
-let hashData' (price: uint64) =
-    let h = hashData'' price
-            |> Zen.Cost.Realized.__force
-            |> Hash.Hash
-    printfn "%A" h
-    h
+//let hashData' (price: uint64) =
+//    let h = hashData'' price
+//            |> Zen.Cost.Realized.__force
+//            |> Hash.Hash
+//    printfn "%A" h
+//    h
 
 let hashParams (price: uint64) =
      [ Hash.compute (u64Bytes time)
