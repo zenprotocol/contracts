@@ -18,7 +18,7 @@ module TX = Zen.TxSkeleton
 module U32 = FStar.UInt32
 
 // The public key of the oracle
-let oraclePubKey = ""
+let oraclePubKey = "02add2eb8158d81b7ea51e35ddde9c8a95e24449bdab8391f40c5517bdb9a3e117"
 
 // The length of the backlog of merkle roots
 let backLogLength = 10
