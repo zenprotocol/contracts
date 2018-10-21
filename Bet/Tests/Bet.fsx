@@ -18,7 +18,8 @@ type Outpoint = Types.Outpoint
 type Output = Types.Output
 type Spend = Types.Spend
 
-let contractDLL = "../output/Bet.dll"
+let contractDLL = "output/Bet.dll"
+let betSrc = "Bet.fst"
 
 let u64Bytes (u64: uint64) =
     let bytes = System.BitConverter.GetBytes u64
@@ -98,7 +99,7 @@ let oracleContractID = "00000000ca055cc0af4d25ea1c8bbbf41444aadd68a168558397516b
                        |> ContractId.fromString
                        |> Option.get
 
-let getRawCode() = System.IO.File.ReadAllText "../Bet.fst"
+let getRawCode() = System.IO.File.ReadAllText betSrc
 
 let contractID = getRawCode()
                  |> Contract.makeContractId Types.Version0
@@ -153,8 +154,14 @@ let onlyReturnAddress =
     |> Zen.Types.Data.Collection
     |> Some
 
-let hashParams'' time ticker price =
-    (System.Reflection.Assembly.LoadFrom contractDLL)
+let onlyPrice =
+    addU64 ("Price"B, strike) Zen.Dictionary.empty
+    |> Zen.Types.Data.Dict
+    |> Zen.Types.Data.Collection
+    |> Some
+
+let hashData'' price =
+    (System.Reflection.Assembly.LoadFrom "output/Bet.dll")
         .GetModules().[0]  // Should get ModuleName.dll
         .GetTypes().[0]    // Should get ModuleName
         .GetMethod("hashData") // ModuleName.name
@@ -162,12 +169,20 @@ let hashParams'' time ticker price =
     :?> (Zen.Cost.Realized.cost<Zen.Types.Extracted.hash,unit>)
 
 
-//let hashData' (price: uint64) =
-//    let h = hashData'' price
-//            |> Zen.Cost.Realized.__force
-//            |> Hash.Hash
-//    printfn "%A" h
-//    h
+let hashData' (price: uint64) =
+    let h = hashData'' price
+            |> Zen.Cost.Realized.__force
+            |> Hash.Hash
+    printfn "%A" h
+    h
+
+let hashParams'' time ticker price =
+    (System.Reflection.Assembly.LoadFrom contractDLL)
+        .GetModules().[0]  // Should get ModuleName.dll
+        .GetTypes().[0]    // Should get ModuleName
+        .GetMethod("hashData") // ModuleName.name
+        .Invoke(null, [|price|])
+    :?> (Zen.Cost.Realized.cost<Zen.Types.Extracted.hash,unit>)
 
 let hashParams (price: uint64) =
      [ Hash.compute (u64Bytes time)

@@ -4,4 +4,5 @@ To run tests, run
 ```
 zebra -r Tests/Buy.fsx
 zebra -r Tests/Redeem.fsx
+zebra -r Tests/ChainedContracts.fsx
 ```
