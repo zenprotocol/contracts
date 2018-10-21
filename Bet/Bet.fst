@@ -3,7 +3,7 @@ module Bet
 This contract issues two tokens, for positive and negative outcomes.
 The tokens are redeemable for 1ZP in the event that their corresponding outcome occurs.
 
-This contract will require a z3rlimit of at least 3500000 in order to successfully record hints.
+This contract will require a z3rlimit of at least 3000000 in order to successfully record hints.
 *)
 
 open Zen.Base
@@ -12,20 +12,22 @@ open Zen.Data
 open Zen.Types
 
 module Asset = Zen.Asset
-module CID = Zen.ContractId
 module CR = Zen.ContractResult
 module Dict  = Zen.Dictionary
 module Hash = Zen.Hash
-module OT = Zen.OptionT
 module RT = Zen.ResultT
-module String = FStar.String
 module TX = Zen.TxSkeleton
 module U64 = FStar.UInt64
 module Wallet = Zen.Wallet
 
+val oracleContractID: s:string {FStar.String.length s = 72}
 let oracleContractID = "00000000ca055cc0af4d25ea1c8bbbf41444aadd68a168558397516b2f64727d87e72f97"
+
+val ticker: s: string{FStar.String.length s <= 4}
 let ticker = "AMD"
+
 let strike = 65000UL // USD price multiplied by 1000
+
 let time = 1539264654UL
 
 type messageParams = {
@@ -60,7 +62,7 @@ let hashData price = let open Hash in // 36
     let! timeHash = updateU64 time empty // 48
                     >>= finalize in // 20
     let! tickerHash = begin updateString ticker empty
-                      |> inc (6 * (4 - String.length ticker)) //24
+                      |> inc (6 * (4 - FStar.String.length ticker)) //24
                       >>= finalize //20
                       end <: hash `cost` 44 in //20
     let! priceHash = updateU64 price empty // 48
@@ -71,26 +73,36 @@ let hashData price = let open Hash in // 36
     >>= updateHash priceHash // 192
     >>= finalize // 20
 
-val buy: txSkeleton -> contractId -> messageBody: option data -> CR.t `cost` 635
-let buy tx contractId messageBody = // 45
+val buyTx: txSkeleton -> contractId -> lock -> U64.t -> CR.t `cost` 483
+let buyTx tx contractID returnAddress amount = // 32
+    let! bullToken = Asset.fromSubtypeString contractID "Bull" in // 64
+    let! bearToken = Asset.fromSubtypeString contractID "Bear" in // 64
+    // lock all available ZP to this contract
+    TX.lockToContract Asset.zenAsset amount contractID tx // 64
+    // mint an equivalent amount of bull and bear tokens
+    >>= TX.mint amount bullToken // 64
+    >>= TX.mint amount bearToken // 64
+    // lock bull and bear tokens to the returnAddress
+    >>= TX.lockToAddress bullToken amount returnAddress // 64
+    >>= TX.lockToAddress bearToken amount returnAddress // 64
+    >>= CR.ofTxSkel // 3
+
+val buy: txSkeleton -> contractId -> messageBody: option data -> CR.t `cost` 718
+let buy tx contractID messageBody = // 32
     let! returnAddress = messageBody >!= tryDict // 4
                                      >>= getReturnAddress in // 71
-    match returnAddress with
-    | Some returnAddress ->
-        let! bullToken = Asset.fromSubtypeString contractId "Bull" in // 64
-        let! bearToken = Asset.fromSubtypeString contractId "Bear" in // 64
-        // the amount of ZP available
-        let! amount = TX.getAvailableTokens Asset.zenAsset tx in // 64
-        // lock all available ZP to this contract
-        TX.lockToContract Asset.zenAsset amount contractId tx // 64
-        // mint an equivalent amount of bull and bear tokens
-        >>= TX.mint amount bullToken // 64
-        >>= TX.mint amount bearToken // 64
-        // lock bull and bear tokens to the returnAddress
-        >>= TX.lockToAddress bullToken amount returnAddress // 64
-        >>= TX.lockToAddress bearToken amount returnAddress // 64
-        >>= CR.ofTxSkel // 3
-    | None -> RT.autoFailw "Could not parse returnAddress from messageBody"
+    let! oracleContractID = Zen.ContractId.parse oracleContractID in //64
+    let! amount = TX.getAvailableTokens Asset.zenAsset tx in // 64
+    match returnAddress, oracleContractID with
+    | Some returnAddress, Some oracleContractID ->
+        if amount <> 0UL then
+            buyTx tx contractID returnAddress amount // 483
+        else
+            RT.incFailw 483 "Cannot buy with 0ZP in txSkeleton"
+    | None, _ ->
+        RT.incFailw 483 "Could not parse returnAddress from messageBody"
+    | _, None ->
+        RT.incFailw 483 "Could not parse oracleContractID. This contract will be unusable. Please redeploy this contract with a valid oracleContractID."
 
 val oracleMessage: U64.t -> Dict.t data -> contractId -> message `cost` 892
 let oracleMessage price dict oracleContractID = // 16
@@ -101,23 +113,23 @@ let oracleMessage price dict oracleContractID = // 16
            body=Some(Collection (Dict dict)) })
 
 // invokes the oracle to validate inclusion of the message
-val oracleCheck:
+val invokeOracle:
     U64.t
     -> option (Dict.t data)
     -> option txSkeleton
     -> CR.t `cost` 987
-let oracleCheck price dict tx = // 31
-    let! oracleContractID = CID.parse oracleContractID in // 64
+let invokeOracle price dict tx = // 31
+    let! oracleContractID = Zen.ContractId.parse oracleContractID in // 64
     match dict, oracleContractID, tx with
     | Some dict, Some oracleContractID, Some tx ->
         let! msg = oracleMessage price dict oracleContractID in // 892
         RT.ok ({ tx=tx; message=Some msg; state=NoChange })
     | None, _, _ ->
-        RT.autoFailw "Something went wrong! messageBody should not be empty"
+        RT.incFailw 892 "Something went wrong! messageBody should not be empty"
     | _, None, _ ->
-        RT.autoFailw "Something went wrong! could not parse oracleContractID"
+        RT.incFailw 892 "Something went wrong! could not parse oracleContractID"
     | _, _, None ->
-        RT.autoFailw "Could not construct tx from wallet"
+        RT.incFailw 892 "Could not construct tx from wallet"
 
 val redeemTx:
     asset
@@ -135,9 +147,10 @@ let redeemTx contractAsset tx contractID messageParams dict wallet = // 24
     // send the same amount of ZP to the returnAddress
     >>= TX.lockToAddress Asset.zenAsset amount messageParams.returnAddress // 64
     >>= TX.fromWallet Asset.zenAsset amount contractID wallet // 128 * size wallet + 192
-    <: (option txSkeleton `cost` (Wallet.size wallet * 128 + 320)) end
+    <: (option txSkeleton `cost` (Wallet.size wallet * 128 + 320))
+    end
     // check with the oracle
-    >>= oracleCheck messageParams.price dict // 987
+    >>= invokeOracle messageParams.price dict // 987
 
 val redeem:
     txSkeleton
@@ -165,14 +178,14 @@ let redeem tx contractID messageBody wallet = let open U64 in // 28
 let main (tx: txSkeleton) _ (contractID: contractId) (command: string) _
          (messageBody: option data) (wallet: wallet) _
          : CR.t `cost` ( match command with
-                         | "Buy" -> 642
+                         | "Buy" -> 725
                          | "Redeem" -> Wallet.size wallet * 128 + 1659
                          | _ -> 7 ) = // 7
     match command with
     | "Buy" ->
         buy tx contractID messageBody
         <: (CR.t `cost` ( match command with
-                          | "Buy" -> 635
+                          | "Buy" -> 718
                           | "Redeem" -> Wallet.size wallet * 128 + 1652
                           | _ -> 0 ))
     | "Redeem" ->
@@ -182,6 +195,6 @@ let main (tx: txSkeleton) _ (contractID: contractId) (command: string) _
 
 let cf _ _ (command: string) _ _ (wallet: wallet) _ : nat `cost` 9 = // 9
     match command with
-    | "Buy" -> ret 642
+    | "Buy" -> ret 725
     | "Redeem" -> ret (Wallet.size wallet * 128 + 1659)
     | _ -> ret 7
