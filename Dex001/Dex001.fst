@@ -20,6 +20,27 @@ type order = {
     makerPubKey: publicKey // the public key of the order maker
 }
 
+// A double uint64, needed for multiplying two arbitrary uint64s without overflow
+type d64 = { hi:U64.t; lo:U64.t }
+
+// multiply two uint64s without overflow
+// algorithm adapted from 'The Art of Computer Programming' by Donald E. Knuth
+val dmul64: U64.t -> U64.t -> d64 `cost` 0
+let dmul64 x y = let open U64 in
+    let m32 = 4294967296UL in // 2^32
+    let xhi = x %^ m32 in // 32 high bits of x
+    let xlo = x /^ m32 in // 32 low bits of x
+    let yhi = y %^ m32 in // 32 high bits of y
+    let ylo = y /^ m32 in // 32 low bits of y
+
+    let t0 = xhi *%^ yhi in
+    let t1 = (xlo *%^ yhi) +%^ (t0 /^ m32) in
+    let t2 = (xhi *%^ ylo) +%^ (t1 %^ m32) in
+
+    let hi = (xlo *%^ ylo) +%^ (t1 %^ m32) in
+    let lo = ((t2 *%^ m32) *%^ m32) +%^ (t0 %^ m32) in
+    ret ({hi=hi; lo=lo})
+
 val mkAsset: contractId -> hash -> asset `cost` 0
 let mkAsset (version, contractHash) hash =
     ret (version, contractHash, hash)
@@ -138,6 +159,18 @@ let getOrderAsset contractID order =
     let! orderHash = hashOrder order in // 2328
     mkAsset contractID orderHash
 
+val getRequestedPayout: option (Dict.t data) -> result U64.t `cost` 66
+let getRequestedPayout dict =
+    let! requestedPayout = dict >!= Dict.tryFind "RequestedPayout" // 64
+                                >?= tryU64 in //2
+    match requestedPayout with
+    | Some 0UL ->
+        RT.failw "RequestedPayout cannot be 0"
+    | Some requestedPayout ->
+        RT.ok requestedPayout
+    | None ->
+        RT.failw "Message Body must include valid RequestedPayout"
+
 //////////////////
 // Making an order
 //////////////////
@@ -248,8 +281,52 @@ let cancel txSkeleton contractID sender messageBody wallet =
 //////////////////
 // Taking an order
 //////////////////
-val parseOrder: option (Dict.t data) -> result order `cost` 594
-let parseOrder dict =
+
+// check that the requestedPayout is ok
+val checkRequestedPayout:
+    order
+    -> requestedPayout: U64.t
+    -> paymentAmount: U64.t
+    -> bool `cost` 0
+let checkRequestedPayout { underlyingAmount=ua; orderTotal=ot} rp pa =
+    // we want to check that
+    // requestedPayout = floor (underlyingAmount * (paymentAmount / orderTotal))
+    // which is equivalent to
+    // underlyingAmount * paymentAmount
+    // < requestedPayout * orderTotal + orderTotal
+    // <= underlyingAmount * paymentAmount + orderTotal
+
+    let open U64 in
+    // 2^64 - 1
+    let max64 = 18446744073709551615UL in
+
+    // compute underlyingAmount * paymentAmount
+    let! ua_pa = dmul64 ua pa in
+    // compute requestedPayout * orderTotal
+    let! rp_ot = dmul64 rp ot in
+    // compute requestedPayout * orderTotal + orderTotal
+    let rp_ot_ot = { hi = if rp_ot.lo >=^ max64 -%^ ot // will adding low 64 bits overflow
+                          then rp_ot.hi +%^ 1UL // this never overflows
+                          else rp_ot.hi;
+                     lo = rp_ot.lo +%^ ot } in
+    // compute underlyingAmount * paymentAmount + orderTotal
+    let ua_pa_ot = { hi = if ua_pa.lo >=^ max64 -%^ ot // will adding low 64 bits overflow
+                          then ua_pa.hi +%^ 1UL // this never overflows
+                          else ua_pa.hi;
+                     lo = ua_pa.lo +%^ ot } in
+
+    // underlyingAmount * paymentAmount < requestedPayout * orderTotal + orderTotal
+    let ua_pa_lt_rp_ot_ot = (ua_pa.hi <^ rp_ot.hi)
+                         || (ua_pa.hi = rp_ot.hi && ua_pa.lo <^ rp_ot.lo) in
+    // requestedPayout * orderTotal + orderTotal <= underlyingAmount * paymentAmount + orderTotal
+    let rp_ot_ot_lte_ua_pa_ot = (rp_ot_ot.hi <^ ua_pa_ot.hi)
+                             || (rp_ot_ot.hi = ua_pa_ot.hi && rp_ot_ot.lo <=^ ua_pa_ot.lo) in
+    // both conditions must hold
+    ret (ua_pa_lt_rp_ot_ot && rp_ot_ot_lte_ua_pa_ot)
+
+// parse the messageBody to get the order being taken
+val parseTake: option (Dict.t data) -> result order `cost` 594
+let parseTake dict =
     let! underlyingAsset = getUnderlyingAsset dict in // 198
     let! underlyingAmount = getUnderlyingAmount dict in // 66
     let! pairAsset = getPairAsset dict in // 198
@@ -257,11 +334,11 @@ let parseOrder dict =
     let! makerPK = getMakerPK dict in // 66
     match underlyingAsset, underlyingAmount, pairAsset, orderTotal, makerPK with
     | OK underlyingAsset, OK underlyingAmount, OK pairAsset, OK orderTotal, OK makerPK ->
-        RT.ok ( { underlyingAsset=underlyingAsset;
+         RT.ok ({ underlyingAsset=underlyingAsset;
                   underlyingAmount=underlyingAmount;
                   pairAsset=pairAsset;
                   orderTotal=orderTotal;
-                  makerPubKey=makerPK } )
+                  makerPubKey=makerPK })
     | _ ->
         RT.failw "Bad messageBody"
 
@@ -270,14 +347,15 @@ val takeTx:
     -> contractId
     -> w: wallet
     -> U64.t
+    -> U64.t
     -> order
     -> lock
     -> CR.t `cost` (W.size w * 256 + 3311)
-let takeTx txSkeleton contractID wallet paymentAmount order returnAddress =
+let takeTx txSkeleton contractID wallet paymentAmount payoutAmount order returnAddress =
     let! orderAsset = getOrderAsset contractID order in // 2328
     let! makerPubKeyHash = hashPubkey order.makerPubKey in // 404
     // lock the underlying to the returnAddress
-    TX.lockToAddress order.underlyingAsset order.underlyingAmount returnAddress txSkeleton // 64
+    TX.lockToAddress order.underlyingAsset payoutAmount returnAddress txSkeleton // 64
     // lock the paymentAmount to the maker
     >>= TX.lockToPubKey order.pairAsset paymentAmount makerPubKeyHash // 64
     // destroy the order
@@ -287,34 +365,30 @@ let takeTx txSkeleton contractID wallet paymentAmount order returnAddress =
     >?= TX.fromWallet orderAsset 1UL contractID wallet // W.size wallet * 128 + 192
     >>= CR.ofOptionTxSkel "Could not find order in wallet. Ensure that both the order and the correct amount of the underlying are present." // 3
 
+val take':
+    txSkeleton
+    -> contractId
+    -> w: wallet
+    -> order
+    -> U64.t
+    -> lock
+    -> CR.t `cost` (W.size w * 256 + 3375)
+let take' tx contractID w order requestedPayout returnAddress =
+    let! paymentAmount = TX.getAvailableTokens order.pairAsset tx in // 64
+    let! paymentAmountOK = checkRequestedPayout order requestedPayout paymentAmount in
+    if paymentAmountOK
+    then takeTx tx contractID w paymentAmount requestedPayout order returnAddress // W.size w * 256 + 3311
+    else RT.incFailw (W.size w * 256 + 3311) "Incorrect requestedPayout"
+
 val take:
     txSkeleton
     -> contractId
     -> option data
     -> w: wallet
-    -> CR.t `cost` (W.size w * 256 + 4039)
-let take txSkeleton contractID messageBody wallet =
+    -> CR.t `cost` (W.size w * 256 + 4105)
+let take tx contractID messageBody w =
     let! dict = messageBody >!= tryDict in // 4
-    let! order = parseOrder dict in // 594
+    let order = parseTake dict in // 594
+    let requestedPayout = getRequestedPayout dict in // 66
     let returnAddress = getReturnAddress dict in // 66
-    match order with
-    | OK order ->
-        let! paymentAmount = TX.getAvailableTokens order.pairAsset txSkeleton in // 64
-        let! tx =
-            returnAddress `RT.bind` takeTx txSkeleton contractID wallet paymentAmount order in // W.size w * 256 + 3311
-        begin if paymentAmount = order.orderTotal
-              then ret tx
-              else RT.failw "Payment amount must be exactly order total." end
-    | _ -> RT.autoFailw "Bad messageBody"
-(*)
-val payout:
-    underlyingAmount: U64.t
-    -> orderTotal: U64.t
-    -> paymentAmount: U64.t
-    -> (payout: U64.t) `cost` 0
-
-val refund:
-    underlyingAmount: U64.t
-    -> orderTotal: U64.t
-    -> paymentAmount: U64.t
-    -> (refund: U64.t) `cost` 0
+    RT.bind3 order requestedPayout returnAddress (take' tx contractID w)

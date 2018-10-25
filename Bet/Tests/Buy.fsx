@@ -92,58 +92,15 @@ match buy emptyTx emptyMessageBody with
 | Error e -> failwithf "Failed with unexpected error: `%A`" e
 
 //////////////////////////////////////////////////////////////////////////
-// Buy with returnAddress and no inputs
-// Should mint 0 bull & bear tokens and spends them to returnAddress
+// Buy with returnAddress and no ZP inputs fails
 //////////////////////////////////////////////////////////////////////////
 
 match buy emptyTx onlyReturnAddress with
-| Ok ({pInputs=pInputs; outputs=outputs}, None, Main.NoChange) -> // expect no message or state update
-    // check inputs
-    match pInputs with
-    | [Tx.Mint mint0; Tx.Mint mint1] ->
-        if mint0.amount <> 0UL
-            then failwithf "Expected mint 0 to have amount 0, but got: `%A`" mint0
-        if mint0.asset <> bullToken
-            then failwithf "Expected mint 0 to be bull token, but got: `%A`" mint0
-        if mint1.amount <> 0UL
-            then failwithf "Expected mint 1 to have amount 0, but got: `%A`" mint1
-        if mint1.asset <> bearToken
-            then failwithf "Expected mint 1 to be bear token, but got: `%A`" mint1
-    | _ ->
-        failwithf "Expected 2 mints but got: `%A`" pInputs
-    // check outputs
-    match outputs with
-    | [output0; output1; output2] ->
-        if output0.spend.amount <> 0UL
-            then failwithf "Expected output 0 to have amount 0, but got: `%A`" output0
-        if output0.spend.asset <> Asset.Zen
-            then failwithf "Expected output 0 to be ZP, but got: `%A`" output0
-        if output0.lock <> Contract contractID
-            then failwithf "Expected output 0 to lock to contract, but got: `%A`" output0
-        if output1.spend.amount <> 0UL
-            then failwithf "Expected output 1 to have amount 0, but got: `%A`" output1
-        if output1.spend.asset <> bullToken
-            then failwithf "Expected output 1 to be bear token, but got: `%A`" output1
-        if output1.lock <> PK Hash.zero
-            then failwithf "Expected output 1 to lock to returnAddress, but got: `%A`" output1
-        if output2.spend.amount <> 0UL
-            then failwithf "Expected output 2 to have amount 0, but got: `%A`" output2
-        if output2.spend.asset <> bearToken
-            then failwithf "Expected output 2 to be bear token, but got: `%A`" output2
-        if output2.lock <> PK Hash.zero
-            then failwithf "Expected output 2 to lock to contract, but got: `%A`" output2
-    | _ ->
-        failwithf "Expected 3 outputs but got: `%A`" pInputs
 
-    // If you reach here, all is ok!
-    printfn "OK: Buy with returnAddress and no inputs"
-
-| Ok (_, msg, Main.NoChange) ->
-    failwithf "Expected no return message, but got: `%A`" msg
-| Ok (_, _, stateUpdate) ->
-    failwithf "Expected no state change, but got: `%A`" stateUpdate
-| Error e ->
-    failwithf "Failed with unexpected error: `%A`" e
+| Error "Cannot buy with 0ZP in txSkeleton" ->
+    printfn "OK: Buy with returnAddress and no ZP inputs fails"
+| Ok _ -> failwith "Should not return ok with 0ZP in inputs"
+| Error e -> failwithf "Failed with unexpected error: `%A`" e
 
 //////////////////////////////////////////////////////////////////////////
 // Buy with returnAddress and single 50ZP input
