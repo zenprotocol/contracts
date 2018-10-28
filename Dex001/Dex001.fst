@@ -77,11 +77,11 @@ let hashOrder order =
 val getUnderlyingAsset: option (Dict.t data) -> result asset `cost` 198
 let getUnderlyingAsset dict =
     let! version = dict >!= Dict.tryFind "UnderlyingAssetVersion" // 64
-                        >?= tryU32 in //2
+                        >?= tryU32 in // 2
     let! contractHash = dict >!= Dict.tryFind "UnderlyingContractHash" // 64
-                             >?= tryHash in //2
+                             >?= tryHash in // 2
     let! subID = dict >!= Dict.tryFind "UnderlyingSubIdentifier" // 64
-                      >?= tryHash in //2
+                      >?= tryHash in // 2
     match version, contractHash, subID with
     | Some version, Some contractHash, Some subID ->
         RT.ok (version, contractHash, subID)
@@ -95,7 +95,7 @@ let getUnderlyingAsset dict =
 val getUnderlyingAmount: option (Dict.t data) -> result U64.t `cost` 66
 let getUnderlyingAmount dict =
     let! underlyingAmount = dict >!= Dict.tryFind "UnderlyingAmount" // 64
-                                 >?= tryU64 in //2
+                                 >?= tryU64 in // 2
     match underlyingAmount with
     | Some 0UL ->
         RT.failw "UnderlyingAmount cannot be 0"
@@ -107,11 +107,11 @@ let getUnderlyingAmount dict =
 val getPairAsset: option (Dict.t data) -> result asset `cost` 198
 let getPairAsset dict =
     let! version = dict >!= Dict.tryFind "PairAssetVersion" // 64
-                        >?= tryU32 in //2
+                        >?= tryU32 in // 2
     let! contractHash = dict >!= Dict.tryFind "PairContractHash" // 64
-                             >?= tryHash in //2
+                             >?= tryHash in // 2
     let! subID = dict >!= Dict.tryFind "PairSubIdentifier" // 64
-                      >?= tryHash in //2
+                      >?= tryHash in // 2
     match version, contractHash, subID with
     | Some version, Some contractHash, Some subID ->
         RT.ok (version, contractHash, subID)
@@ -125,7 +125,7 @@ let getPairAsset dict =
 val getOrderTotal: option (Dict.t data) -> result U64.t `cost` 66
 let getOrderTotal dict =
     let! orderTotal = dict >!= Dict.tryFind "OrderTotal" // 64
-                           >?= tryU64 in //2
+                           >?= tryU64 in // 2
     match orderTotal with
     | Some 0UL ->
         RT.failw "OrderTotal cannot be 0"
@@ -137,7 +137,7 @@ let getOrderTotal dict =
 val getMakerPK: option (Dict.t data) -> result publicKey `cost` 66
 let getMakerPK dict =
     let! makerPK = dict >!= Dict.tryFind "MakerPK" // 64
-                        >?= tryPublicKey in //2
+                        >?= tryPublicKey in // 2
     match makerPK with
     | Some makerPK ->
         RT.ok makerPK
@@ -147,7 +147,7 @@ let getMakerPK dict =
 val getReturnAddress: option (Dict.t data) -> result lock `cost` 66
 let getReturnAddress dict =
     let! returnAddress = dict >!= Dict.tryFind "returnAddress" // 64
-                              >?= tryLock in //2
+                              >?= tryLock in // 2
     match returnAddress with
     | Some returnAddress ->
         RT.ok returnAddress
@@ -162,7 +162,7 @@ let getOrderAsset contractID order =
 val getRequestedPayout: option (Dict.t data) -> result U64.t `cost` 66
 let getRequestedPayout dict =
     let! requestedPayout = dict >!= Dict.tryFind "RequestedPayout" // 64
-                                >?= tryU64 in //2
+                                >?= tryU64 in // 2
     match requestedPayout with
     | Some 0UL ->
         RT.failw "RequestedPayout cannot be 0"
@@ -203,27 +203,26 @@ let makeOrder makeParams senderPK underlyingAmount =
             makerPubKey=senderPK } )
 
 val makeTx: txSkeleton -> contractId -> publicKey -> makeParams -> CR.t `cost` 2587
-let makeTx txSkeleton contractID senderPK makeParams =
-    let! underlyingAmount =
-        TX.getAvailableTokens makeParams.makeUnderlyingAsset txSkeleton in // 64
+let makeTx tx contractID senderPK makeParams =
+    let! underlyingAmount = TX.getAvailableTokens makeParams.makeUnderlyingAsset tx in // 64
     if underlyingAmount <> 0UL then begin // 2563
         let! order = makeOrder makeParams senderPK underlyingAmount in
         // issue a token with the hash of the order as the subidentifier, and lock it to the contract
         let! orderAsset = getOrderAsset contractID order in // 2328
-        TX.mint 1UL orderAsset txSkeleton //64
-        >>= TX.lockToContract orderAsset 1UL contractID //64
+        TX.mint 1UL orderAsset tx // 64
+        >>= TX.lockToContract orderAsset 1UL contractID // 64
         // lock the underlying to the contract
-        >>= TX.lockToContract order.underlyingAsset underlyingAmount contractID //64
+        >>= TX.lockToContract order.underlyingAsset underlyingAmount contractID // 64
         >>= CR.ofTxSkel // 3
         end
     else RT.autoFailw "UnderlyingAmount cannot be 0"
 
 val make: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 3053
-let make txSkeleton contractID sender messageBody =
+let make tx contractID sender messageBody =
     match sender with
     | PK senderPK ->
         let makeParams = parseMake messageBody in // 466
-        makeParams `RT.bind` makeTx txSkeleton contractID senderPK // 2587
+        makeParams `RT.bind` makeTx tx contractID senderPK // 2587
     | _ ->
         RT.autoFailw "Sender must authenticate with public key"
 
@@ -245,8 +244,11 @@ let getCancelOrder makerPK messageBody =
                   pairAsset=pairAsset;
                   orderTotal=orderTotal;
                   makerPubKey=makerPK } )
-    | _ ->
-        RT.failw "Bad messageBody"
+    | ERR msg, _, _, _
+    | OK _, ERR msg, _, _
+    | OK _, OK _, ERR msg, _
+    | OK _, OK _, OK _, ERR msg -> RT.failw msg
+    | _ -> RT.failw "Something went wrong! Please file a bug report"
 
 val cancelTx:
     txSkeleton
@@ -255,12 +257,13 @@ val cancelTx:
     -> w: wallet
     -> order
     -> CR.t `cost` (W.size w * 128 + 2587)
-let cancelTx txSkeleton contractID senderPK wallet order =
+let cancelTx tx contractID senderPK w order =
     // destroy the order
-    let! orderAsset = getOrderAsset contractID order in //2328
-    TX.destroy 1UL orderAsset txSkeleton // 64
-    >>= TX.fromWallet orderAsset 1UL contractID wallet // W.size wallet * 128 + 192
-    >>= CR.ofOptionTxSkel "Could not find order in wallet" //3
+    let! orderAsset = getOrderAsset contractID order in // 2328
+    begin TX.destroy 1UL orderAsset tx // 64
+          >>= TX.fromWallet orderAsset 1UL contractID w // W.size w * 128 + 192
+          <: option txSkeleton `cost` (W.size w * 128 + 256) end
+    >>= CR.ofOptionTxSkel "Could not find order in wallet" // 3
 
 val cancel:
     txSkeleton
@@ -269,14 +272,13 @@ val cancel:
     -> option data
     -> w: wallet
     -> CR.t `cost` (W.size w * 128 + 3119)
-let cancel txSkeleton contractID sender messageBody wallet =
+let cancel tx contractID sender messageBody w =
     match sender with
     | PK senderPK ->
-        let cancelOrder = getCancelOrder senderPK messageBody in // 532
-        cancelOrder `RT.bind` cancelTx txSkeleton contractID senderPK wallet // W.size wallet * 128 + 2587
+        let order = getCancelOrder senderPK messageBody in // 532
+        order `RT.bind` cancelTx tx contractID senderPK w // W.size w * 128 + 2587
     | _ ->
-        RT.autoFailw "Sender must authenticate with public key"
-
+        RT.incFailw  (W.size w * 128 + 3119) "Sender must authenticate with public key"
 
 //////////////////
 // Taking an order
@@ -339,8 +341,31 @@ let parseTake dict =
                   pairAsset=pairAsset;
                   orderTotal=orderTotal;
                   makerPubKey=makerPK })
-    | _ ->
-        RT.failw "Bad messageBody"
+    | ERR msg, _, _, _, _
+    | OK _, ERR msg, _, _, _
+    | OK _, OK _, ERR msg, _, _
+    | OK _, OK _, OK _, ERR msg, _
+    | OK _, OK _, OK _, OK _, ERR msg -> RT.failw msg
+    | _ -> RT.failw "Something went wrong! Please file a bug report"
+
+// updates an order in the case of a partial fill
+val updateOrder:
+    contractId
+    -> order
+    -> U64.t
+    -> U64.t
+    -> txSkeleton
+    -> txSkeleton `cost` 2456
+let updateOrder contractID order paymentAmount payoutAmount tx = let open U64 in
+    let newOrder = { order with
+                     underlyingAmount=order.underlyingAmount-%^payoutAmount;
+                     orderTotal=order.orderTotal-%^paymentAmount } in
+    let! newOrderAsset = getOrderAsset contractID newOrder in // 2328
+    if paymentAmount <^ order.orderTotal // partial fill, so need to update the order
+    then // mint new order asset and lock to contract
+         TX.mint 1UL newOrderAsset tx // 64
+         >>= TX.lockToContract newOrderAsset 1UL contractID // 64
+    else incRet 128 tx
 
 val takeTx:
     txSkeleton
@@ -350,16 +375,18 @@ val takeTx:
     -> U64.t
     -> order
     -> lock
-    -> CR.t `cost` (W.size w * 256 + 3311)
-let takeTx txSkeleton contractID wallet paymentAmount payoutAmount order returnAddress =
+    -> CR.t `cost` (W.size w * 256 + 5767)
+let takeTx tx contractID wallet paymentAmount payoutAmount order returnAddress =
     let! orderAsset = getOrderAsset contractID order in // 2328
     let! makerPubKeyHash = hashPubkey order.makerPubKey in // 404
     // lock the underlying to the returnAddress
-    TX.lockToAddress order.underlyingAsset payoutAmount returnAddress txSkeleton // 64
+    TX.lockToAddress order.underlyingAsset payoutAmount returnAddress tx // 64
     // lock the paymentAmount to the maker
     >>= TX.lockToPubKey order.pairAsset paymentAmount makerPubKeyHash // 64
     // destroy the order
     >>= TX.destroy 1UL orderAsset // 64
+    //  create a new order if partial fill
+    >>= updateOrder contractID order paymentAmount payoutAmount // 2456
     // add inputs from wallet
     >>= TX.fromWallet order.underlyingAsset order.underlyingAmount contractID wallet // W.size wallet * 128 + 192
     >?= TX.fromWallet orderAsset 1UL contractID wallet // W.size wallet * 128 + 192
@@ -372,23 +399,73 @@ val take':
     -> order
     -> U64.t
     -> lock
-    -> CR.t `cost` (W.size w * 256 + 3375)
+    -> CR.t `cost` (W.size w * 256 + 5831)
 let take' tx contractID w order requestedPayout returnAddress =
     let! paymentAmount = TX.getAvailableTokens order.pairAsset tx in // 64
-    let! paymentAmountOK = checkRequestedPayout order requestedPayout paymentAmount in
+    let! paymentAmountOK = checkRequestedPayout order requestedPayout paymentAmount in // 0
     if paymentAmountOK
-    then takeTx tx contractID w paymentAmount requestedPayout order returnAddress // W.size w * 256 + 3311
-    else RT.incFailw (W.size w * 256 + 3311) "Incorrect requestedPayout"
+    then takeTx tx contractID w paymentAmount requestedPayout order returnAddress // W.size w * 256 + 5767
+    else RT.incFailw (W.size w * 256 + 5767) "Incorrect requestedPayout"
 
 val take:
     txSkeleton
     -> contractId
     -> option data
     -> w: wallet
-    -> CR.t `cost` (W.size w * 256 + 4105)
+    -> CR.t `cost` (W.size w * 256 + 6561)
 let take tx contractID messageBody w =
     let! dict = messageBody >!= tryDict in // 4
     let order = parseTake dict in // 594
     let requestedPayout = getRequestedPayout dict in // 66
     let returnAddress = getReturnAddress dict in // 66
-    RT.bind3 order requestedPayout returnAddress (take' tx contractID w)
+    RT.bind3 order requestedPayout returnAddress (take' tx contractID w) // 5831
+
+//////////
+// exports
+//////////
+
+val main:
+    txSkeleton
+    -> context
+    -> contractId
+    -> command: string
+    -> sender
+    -> option data
+    -> w: wallet
+    -> option data
+    -> CR.t `cost` begin match command with
+                   | "Make" -> 3053
+                   | "Cancel" -> W.size w * 128 + 3119
+                   | "Take" -> W.size w * 256 + 6561
+                   | _ -> 0 end
+let main tx _ contractID command sender messageBody w _ =
+    match command with
+    | "Make" ->
+        make tx contractID sender messageBody // 3053
+        <: CR.t `cost` begin match command with
+                       | "Make" -> 3053
+                       | "Cancel" -> W.size w * 128 + 3119
+                       | "Take" -> W.size w * 256 + 6561
+                       | _ -> 0 end
+    | "Cancel" ->
+        cancel tx contractID sender messageBody w // W.size w * 128 + 3119
+    | "Take" ->
+        take tx contractID messageBody w // W.size w * 256 + 6561
+    | _ ->
+        RT.failw "Unrecognised command"
+
+val cf:
+    txSkeleton
+    -> context
+    -> string
+    -> sender
+    -> option data
+    -> wallet
+    -> option data
+    -> nat `cost` 0
+let cf _ _ command _ _ w _ =
+    ret begin match command with
+        | "Make" -> 3053
+        | "Cancel" -> W.size w * 128 + 3119
+        | "Take" -> W.size w * 256 + 6561
+        | _ -> 0 end
