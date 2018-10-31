@@ -23,15 +23,15 @@ let getReturnAddress dict = // 11
     | None ->
         RT.failw "Message Body must include valid returnAddress"
 
-val getAmount: option (Dict.t data) -> result U64.t `cost` 79
-let getAmount dict = // 13
+val getAmount: option (Dict.t data) -> result U64.t `cost` 82
+let getAmount dict = // 16
     let! orderTotal = dict >!= Dict.tryFind "Amount" // 64
                            >?= tryU64 in // 2
     match orderTotal with
-    | Some 0UL ->
-        RT.failw "Amount cannot be 0"
     | Some orderTotal ->
-        RT.ok orderTotal
+        if orderTotal <> 0UL
+        then RT.ok orderTotal
+        else RT.failw "Amount cannot be 0"
     | None ->
         RT.failw "Message Body must include valid Amount"
 
@@ -59,10 +59,10 @@ let issueTX tx contractID amount returnAddress authenticated = // 16
     else
         RT.autoFailw "Authentication failed"
 
-val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 519
+val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 522
 let issue tx contractID sender messageBody = // 13
     let! dict = messageBody >!= tryDict in // 4
-    let amount = getAmount dict in // 79
+    let amount = getAmount dict in // 82
     let returnAddress = getReturnAddress dict in // 77
     let authenticated = authenticate sender in // 135
     RT.bind3 amount returnAddress authenticated (issueTX tx contractID) // 211
@@ -77,10 +77,10 @@ let destroyTX tx contractID amount authenticated = // 11
     else
         RT.autoFailw "Authentication failed"
 
-val destroy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 371
+val destroy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 374
 let destroy tx contractID sender messageBody = // 11
     let! dict = messageBody >!= tryDict in // 4
-    let amount = getAmount dict in // 79
+    let amount = getAmount dict in // 82
     let authenticated = authenticate sender in // 135
     RT.bind2 amount authenticated (destroyTX tx contractID) // 142
 
@@ -94,17 +94,17 @@ val main:
     -> wallet
     -> option data
     -> CR.t `cost` begin match command with
-                   | "Issue" -> 526
-                   | "Destroy" -> 378
+                   | "Issue" -> 529
+                   | "Destroy" -> 381
                    | _ -> 7 end
 let main tx _ contractID command sender messageBody _ _ = // 7
     match command with
-    | "Issue" -> issue tx contractID sender messageBody // 519
+    | "Issue" -> issue tx contractID sender messageBody // 522
                  <: CR.t `cost` begin match command with
-                                | "Issue" -> 519
-                                | "Destroy" -> 371
+                                | "Issue" -> 522
+                                | "Destroy" -> 374
                                 | _ -> 0 end
-    | "Destroy" -> destroy tx contractID sender messageBody // 371
+    | "Destroy" -> destroy tx contractID sender messageBody // 374
     | _ -> RT.failw "Invalid Command"
 
 val cf:
@@ -118,6 +118,6 @@ val cf:
     -> nat `cost` 4
 let cf _ _ command _ _ _ _ = // 4
     ret begin match command with
-        | "Issue" -> 526
-        | "Destroy" -> 378
+        | "Issue" -> 529
+        | "Destroy" -> 381
         | _ -> 7 end
