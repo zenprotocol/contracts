@@ -3,7 +3,7 @@
 
 ## Verify/Build
 
-To verify/record hints, run `zebra  --z3rlimit 7000000 -e Dex001.fst`.  
+To verify/record hints, run `zebra  --z3rlimit 5000000 -e Dex001.fst`.  
 This command may take a long time to run the first time.
 Subsequent runs will be significantly faster.
 With an AMD Threadripper 1950x @4.0GHz, recording hints can take up to 2 minutes. Subsequent runs take ~11s.
@@ -42,34 +42,16 @@ if the sender is `Anonymous` or `Contract contractID`, then the transaction will
 
 The messageBody must consist of a dictionary which includes the following fields:
 
-| Field Name | Type | Description | Notes |
-|:----------:|:----:| ----------- | ----- |
-| `"UnderlyingAssetVersion"` | `UInt32` | The version number of the underlying asset | |
-| `"UnderlyingContractHash"` | `Hash`   | The contract hash for the underlying asset | |
-| `"UnderlyingSubIdentifier"`| `Hash`   | The asset sub-identifier for the underlying asset | |
-| `"PairAssetVersion"` | `UInt32` | The version number of the pair asset | |
-| `"PairContractHash"` | `Hash`   | The contract hash for the pair asset | |
-| `"PairSubIdentifier"` | `Hash`   | The asset sub-identifier for the pair asset | |
-| `"OrderTotal"` | `UInt64` | The total amount of the pair being ordered | Must be greater than 0 |
+| Field Name | Type | Description |
+|:----------:|:----:| ----------- |
+| `"UnderlyingAsset"` | `String` | The identifier of the underlying asset |
+| `"UnderlyingAmount"` | `UInt64` | The amount of the underlying asset used to make the order |
+| `"PairAsset"` | `String` | The identifier of the pair asset |
+| `"OrderTotal"` | `UInt64` | The total amount of the pair being ordered |
+| `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
 
-The transaction must include a nonzero amount of the underlying asset being locked to ZenDex.
-
-For example, to make an order selling 50ZP for 1234 of some asset α which has asset identifier
-`00000000a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3` -
-
-The messageBody would include the field-value pairs
-
-| Field Name | Type | Value | Notes |
-|:----------:|:----:|:-----------:| ----------------------------------------------------- |
-| `"UnderlyingAssetVersion"` | `UInt32` | 0 | The ZP asset has version 0 |
-| `"UnderlyingContractHash"` | `Hash`   | `0000000000000000000000000000000000000000000000000000000000000000` | The ZP asset has the zero hash as it's contract hash |
-| `"UnderlyingContractHash"` | `Hash`   | `0000000000000000000000000000000000000000000000000000000000000000` | The ZP asset has the zero hash as it's asset sub-identifier |
-| `"PairAssetVersion"` | `UInt32` | `00000000` | The first 4 bytes of an asset identifier are the version number |
-| `"PairContractHash"` | `Hash`   | `a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1` | The 5th to 36th bytes are the contract hash of the contract that generated the asset |
-| `"PairSubIdentifier"`| `Hash` | `c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3` | The 37th to 68th bytes are the asset sub-identifier |
-| `"OrderTotal"` | `UInt64` | `1234` | The order is for 1234 of α |
-
-and the transaction would lock 50ZP to ZenDex.
+The amount of the underlying made available to ZenDex in the transaction must be equal to `"UnderlyingAmount"`.
+The public key used to sign the transaction must be the same as `"MakerPubKey"`.
 
 ### Cancelling an order
 
@@ -79,14 +61,11 @@ The messageBody must consist of a dictionary which includes the following fields
 
 | Field Name | Type | Description |
 |:----------:|:----:| ----------- |
-| `"UnderlyingAssetVersion"` | `UInt32` | The version number of the underlying asset of your order |
-| `"UnderlyingContractHash"` | `Hash`   | The contract hash for the underlying asset of your order |
-| `"UnderlyingSubIdentifier"`| `Hash`   | The asset sub-identifier for the underlying asset of your order |
-| `"UnderlyingAmount"` | `UInt64` | The amount of the underlying in the order |
-| `"PairAssetVersion"` | `UInt32` | The version number of the pair asset of your order |
-| `"PairContractHash"` | `Hash` | The contract hash for the pair asset of your order |
-| `"PairSubIdentifier"` | `Hash` | The asset sub-identifier for the pair asset of your order |
-| `"OrderTotal"` | `UInt64` | The total amount of the pair requested in the order |
+| `"UnderlyingAsset"` | `String` | The identifier of the underlying asset of the order|
+| `"UnderlyingAmount"` | `UInt64` | The amount of the underlying asset used to make the order |
+| `"PairAsset"` | `String` | The identifier of the pair asset in the order |
+| `"OrderTotal"` | `UInt64` | The total amount of the pair that was ordered |
+| `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
 
 The transaction must place the order asset in ZenDex's contract wallet,
 as well as a sufficient quantity of the underlying.
@@ -99,15 +78,11 @@ The messageBody must consist of a dictionary which includes the following fields
 
 | Field Name | Type | Description |
 |:----------:|:----:| ----------- |
-| `"UnderlyingAssetVersion"` | `UInt32` | The version number of the underlying asset of the order being taken |
-| `"UnderlyingContractHash"` | `Hash`   | The contract hash for the underlying asset of the order being taken |
-| `"UnderlyingSubIdentifier"`| `Hash`   | The asset sub-identifier for the underlying asset of the order being taken |
-| `"UnderlyingAmount"` | `UInt64` | The amount of the underlying in the order |
-| `"PairAssetVersion"` | `UInt32` | The version number of the pair asset of the order being taken |
-| `"PairContractHash"` | `Hash` | The contract hash for the pair asset of the order being taken |
-| `"PairSubIdentifier"` | `Hash` | The asset sub-identifier for the pair asset of the order being taken |
-| `"OrderTotal"` | `UInt64` | The total amount of the pair requested in the order |
-| `"MakerPK"` | `PublicKey` | The public key of the maker of the order being taken |
+| `"UnderlyingAsset"` | `String` | The identifier of the underlying asset of the order|
+| `"UnderlyingAmount"` | `UInt64` | The amount of the underlying asset used to make the order |
+| `"PairAsset"` | `String` | The identifier of the pair asset in the order |
+| `"OrderTotal"` | `UInt64` | The total amount of the pair that was ordered in the order being taken |
+| `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
 | `"RequestedPayout"` | `UInt64` | The amount of the underlying to pay out |
 
 The transaction must place the order asset being taken and a sufficient amount of the underlying in ZenDex's contract wallet,
