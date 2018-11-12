@@ -1,0 +1,1 @@
+`zebra -v MOfN.fst`
