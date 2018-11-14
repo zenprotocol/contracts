@@ -8,6 +8,8 @@ This command may take a long time to run the first time.
 Subsequent runs will be significantly faster.
 With an AMD Threadripper 1950x @4.0GHz, recording hints can take up to 2 minutes. Subsequent runs take ~11s.
 
+To build, run `zebra --z3rlimit 5000000 -c Dex001.fst`
+
 ## How it works
 
 ZenDex is a true decentralised exchange, with no operator or fees.
