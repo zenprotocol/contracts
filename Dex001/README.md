@@ -89,16 +89,17 @@ The messageBody must consist of a dictionary which includes the following fields
 
 The transaction must place the order asset being taken and a sufficient amount of the underlying in ZenDex's contract wallet,
 and must lock an amount α of the order's pair asset to the contract, where
-<img src="https://latex.codecogs.com/svg.latex?\texttt{RequestedPayout}&space;=&space;\left&space;\lfloor{\texttt{UnderlyingAmount}&space;\times&space;\frac{\alpha}{\texttt{OrderTotal}}}&space;\right&space;\rfloor" title="\texttt{RequestedPayout} = \left \lfloor{\texttt{UnderlyingAmount} \times \frac{\alpha}{\texttt{OrderTotal}}} \right \rfloor" />.
+![Requested Payout Formula](doc/tex/RequestedPayout.png)
 
 ## Notes
 
 Orders are expressed in terms of underlying amount and pair amount to allow for rational price ratios - eg. a trade of 5α for 7β, or 13β for 11γ.
 This is not easily expressed as a 'price per' with only integer arithmetic.
 The payout for a partial fill should, assuming arbitrarily divisible assets, be calculated as
-<img src="https://latex.codecogs.com/svg.latex?\texttt{Payout}&space;=&space;\texttt{UnderlyingAmount}&space;\times&space;\frac{\texttt{PaymentAmount}}{\texttt{OrderTotal}}" title="\texttt{Payout} = \texttt{UnderlyingAmount} \times \frac{\texttt{PaymentAmount}}{\texttt{OrderTotal}}" />.
+![Rational Payout Formula](doc/tex/RationalPayout.png)
+
 However, since we do not have arbitrarily divisible assets, we denote orders in the smallest unit of each asset and compute the floor, so that
-<img src="https://latex.codecogs.com/svg.latex?\texttt{Payout}&space;=&space;\left&space;\lfloor{\texttt{UnderlyingAmount}&space;\times&space;\frac{\texttt{PaymentAmount}}{\texttt{OrderTotal}}}&space;\right&space;\rfloor" title="\texttt{Payout} = \left \lfloor{\texttt{UnderlyingAmount} \times \frac{\texttt{PaymentAmount}}{\texttt{OrderTotal}}} \right \rfloor" />.
+![Payout Formula](doc/tex/Payout.png)
 
 The underlying amount, order total, and payment amount are all 64 bit unsigned integers.
 Version 0 ZF* contracts lack integer representations larger than this, and so we are tasked with implementing double-word arithmetic in order to calculate the payoff.
@@ -107,3 +108,6 @@ we instead ask the user to provide the payoff, and validate that it is correct.
 Validating that a user's `RequestedPayout` is correct is simpler than computing the payout,
 and requires only double-word multiplication and comparison,
 both relatively simple compared to double-word division.
+
+Note that
+![Requested Payout Identity](doc/tex/RequestedPayoutIdentity.png)

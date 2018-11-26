@@ -1,0 +1,16 @@
+&\texttt{RequestedPayout} =
+         \left \lfloor
+         {\texttt{UnderlyingAmount} \times \frac{\alpha}{\texttt{OrderTotal}}}
+         \right \rfloor
+\\
+\iff& \texttt{UnderlyingAmount} \times \frac{\alpha}{\texttt{OrderTotal}} - 1
+       < \texttt{RequestedPayout} \leq
+       \texttt{UnderlyingAmount} \times \frac{\alpha}{\texttt{OrderTotal}}
+\\
+\iff& \texttt{UnderlyingAmount} \times \alpha - \texttt{OrderTotal}
+      < \texttt{RequestedPayout} \times \texttt{OrderTotal} \leq
+      \texttt{UnderlyingAmount} \times \alpha
+\\
+\iff& \texttt{UnderlyingAmount} \times \alpha
+      < \texttt{RequestedPayout} \times \texttt{OrderTotal}  + \texttt{OrderTotal} \leq
+      \texttt{UnderlyingAmount} \times \alpha + \texttt{OrderTotal}
