@@ -4,6 +4,7 @@ open Zen.Cost
 open Zen.Data
 open Zen.Types
 
+module Arr = Zen.Array
 module CR = Zen.ContractResult
 module Dict = Zen.Dictionary
 module Hash = Zen.Hash
@@ -22,6 +23,17 @@ type order = {
 
 // A double uint64, needed for multiplying two arbitrary uint64s without overflow
 type d64 = { hi:U64.t; lo:U64.t }
+
+// compressed public key
+type cpk = byte ** hash
+
+// compress a public key
+val compress: publicKey -> cpk `cost` 305
+let compress pk = let open FStar.UInt8 in // 13
+    let parity = (Arr.item 32 pk %^ 2uy) +^ 2uy in
+    let aux (i:nat{i < 32}): byte `cost` 5 = ret (Arr.item (31-i) pk) in
+    let! x = Arr.init_pure 32 aux in // 292
+    ret (parity, x)
 
 // multiply two uint64s without overflow
 // algorithm adapted from 'The Art of Computer Programming' by Donald E. Knuth
@@ -68,6 +80,12 @@ let updatePubKey pk s = // 5
 val hashPubKey: publicKey -> hash `cost` 807
 let hashPubKey pk = // 4
     updatePubKey pk Hash.empty // 783
+    >>= Hash.finalize // 20
+
+val hashCPK: cpk -> hash `cost` 225
+let hashCPK (parity, x) = // 7
+    Hash.updateByte parity Hash.empty // 6
+    >>= Hash.updateHash x // 192
     >>= Hash.finalize // 20
 
 val hashOrder: order -> hash `cost` 2783
@@ -137,10 +155,11 @@ let getOrderAsset contractID order = // 5
     let! orderHash = hashOrder order in // 2783
     mkAsset contractID orderHash // 4
 
-val lockToPubKey: asset -> U64.t -> publicKey -> txSkeleton -> txSkeleton `cost` 878
-let lockToPubKey asset amount pubKey tx = // 7
-    let! pubKeyHash = hashPubKey pubKey in // 807
-    TX.lockToPubKey asset amount pubKeyHash tx // 64
+val lockToPubKey: asset -> U64.t -> publicKey -> txSkeleton -> txSkeleton `cost` 604
+let lockToPubKey asset amount pk tx = // 10
+    let! cpk = compress pk in // 305
+    let! cpkHash = hashCPK cpk in // 225
+    TX.lockToPubKey asset amount cpkHash tx // 64
 
 // mints an order asset and locks it to the contract, as well as the underlying
 val createOrder: order -> contractId -> txSkeleton -> txSkeleton `cost` 3003
@@ -214,14 +233,14 @@ val cancelTx:
     -> w: wallet
     -> publicKey
     -> order
-    -> CR.t `cost` (W.size w * 256 + 4163)
+    -> CR.t `cost` (W.size w * 256 + 3889)
 let cancelTx tx contractID w senderPubKey order = // 18
     if senderPubKey = order.makerPubKey
     then // lock the underlying to the maker's pk
-         lockToPubKey order.underlyingAsset order.underlyingAmount order.makerPubKey tx // 878
+         lockToPubKey order.underlyingAsset order.underlyingAmount order.makerPubKey tx // 604
          // destroy the order
          >>= destroyOrder order contractID w // W.size w * 256 + 3267
-         <: CR.t `cost` (W.size w * 256 + 4145)
+         <: CR.t `cost` (W.size w * 256 + 3871)
     else RT.autoFailw "SenderPubKey must match MakerPubKey"
 
 val cancel:
@@ -230,14 +249,14 @@ val cancel:
     -> sender
     -> option data
     -> w: wallet
-    -> CR.t `cost` (W.size w * 256 + 4751)
+    -> CR.t `cost` (W.size w * 256 + 4477)
 let cancel tx contractID sender messageBody w = // 14
     match sender with
     | PK senderPubKey ->
         let! dict = messageBody >!= tryDict in //4
         begin let order = getOrder dict in // 570
-        order `RT.bind` cancelTx tx contractID w senderPubKey // W.size w * 256 + 4163
-        end <: CR.t `cost` (W.size w * 256 + 4733)
+        order `RT.bind` cancelTx tx contractID w senderPubKey // W.size w * 256 + 3889
+        end <: CR.t `cost` (W.size w * 256 + 4459)
     | _ ->
         RT.autoFailw "Sender must authenticate with public key"
 
@@ -312,12 +331,12 @@ val takeTx:
     -> U64.t
     -> order
     -> lock
-    -> CR.t `cost` (W.size w * 256 + 7252)
+    -> CR.t `cost` (W.size w * 256 + 6978)
 let takeTx tx contractID w paymentAmount payoutAmount order returnAddress = // 23
     //  lock the payout to the taker
     TX.lockToAddress order.underlyingAsset payoutAmount returnAddress tx // 64
     // lock the paymentAmount to the maker
-    >>= lockToPubKey order.pairAsset paymentAmount order.makerPubKey // 878
+    >>= lockToPubKey order.pairAsset paymentAmount order.makerPubKey // 604
     //  create a new order if partial fill, locking the remainder of the underlying to the contract
     >>= updateOrder contractID order paymentAmount payoutAmount // 3020
     // add inputs from wallet, destroying the order
@@ -330,22 +349,22 @@ val take':
     -> U64.t
     -> lock
     -> order
-    -> CR.t `cost` (W.size w * 256 + 7499)
+    -> CR.t `cost` (W.size w * 256 + 7225)
 let take' tx contractID w requestedPayout returnAddress order = // 20
     let! paymentAmount = TX.getAvailableTokens order.pairAsset tx in // 64
     begin
     let! paymentAmountOK = checkRequestedPayout order requestedPayout paymentAmount in // 163
     if paymentAmountOK
-    then takeTx tx contractID w paymentAmount requestedPayout order returnAddress // W.size w * 256 + 7252
-    else RT.incFailw (W.size w * 256 + 7252) "Incorrect requestedPayout"
-    end <: CR.t `cost` (W.size w * 256 + 7415)
+    then takeTx tx contractID w paymentAmount requestedPayout order returnAddress // W.size w * 256 + 6978
+    else RT.incFailw (W.size w * 256 + 6978) "Incorrect requestedPayout"
+    end <: CR.t `cost` (W.size w * 256 + 7141)
 
 val take:
     txSkeleton
     -> contractId
     -> option data
     -> w: wallet
-    -> CR.t `cost` (W.size w * 256 + 8253)
+    -> CR.t `cost` (W.size w * 256 + 7979)
 let take tx contractID messageBody w = // 29
     let! dict = messageBody >!= tryDict in // 4
     //begin
@@ -355,8 +374,8 @@ let take tx contractID messageBody w = // 29
     match requestedPayout, returnAddress with
     | Some requestedPayout, Some returnAddress ->
         let order = getOrder dict in // 570
-        order `RT.bind` take' tx contractID w requestedPayout returnAddress // W.size w * 256 + 7499
-        <: CR.t `cost` (W.size w * 256 + 8069)
+        order `RT.bind` take' tx contractID w requestedPayout returnAddress // W.size w * 256 + 7225
+        <: CR.t `cost` (W.size w * 256 + 7795)
     | None, _ ->
         RT.autoFailw "Could not parse requestedPayout, or requestedPayout was 0"
     | _, None ->
@@ -377,8 +396,8 @@ val main:
     -> option data
     -> CR.t `cost` ( 9 + begin match command with
                          | "Make" -> 3684
-                         | "Cancel" -> W.size w * 256 + 4751
-                         | "Take" -> W.size w * 256 + 8253
+                         | "Cancel" -> W.size w * 256 + 4477
+                         | "Take" -> W.size w * 256 + 7979
                          | _ -> 0 end )
 let main tx _ contractID command sender messageBody w _ = // 9
     begin
@@ -387,19 +406,19 @@ let main tx _ contractID command sender messageBody w _ = // 9
         make tx contractID sender messageBody // 3684
         <: CR.t `cost` begin match command with
                        | "Make" -> 3684
-                       | "Cancel" -> W.size w * 256 + 4751
-                       | "Take" -> W.size w * 256 + 8253
+                       | "Cancel" -> W.size w * 256 + 4477
+                       | "Take" -> W.size w * 256 + 7979
                        | _ -> 0 end
     | "Cancel" ->
-        cancel tx contractID sender messageBody w // W.size w * 256 + 4751
+        cancel tx contractID sender messageBody w // W.size w * 256 + 4477
     | "Take" ->
-        take tx contractID messageBody w // W.size w * 256 + 8253
+        take tx contractID messageBody w // W.size w * 256 + 7979
     | _ ->
         RT.failw "Unrecognised command"
     end <: CR.t `cost` begin match command with
                        | "Make" -> 3684
-                       | "Cancel" -> W.size w * 256 + 4751
-                       | "Take" -> W.size w * 256 + 8253
+                       | "Cancel" -> W.size w * 256 + 4477
+                       | "Take" -> W.size w * 256 + 7979
                        | _ -> 0 end
 
 val cf:
@@ -414,6 +433,6 @@ val cf:
 let cf _ _ command _ _ w _ = // 12
     ret ( 9 + begin match command with
               | "Make" -> 3684
-              | "Cancel" -> W.size w * 256 + 4751
-              | "Take" -> W.size w * 256 + 8253
+              | "Cancel" -> W.size w * 256 + 4477
+              | "Take" -> W.size w * 256 + 7979
               | _ -> 0 end )
