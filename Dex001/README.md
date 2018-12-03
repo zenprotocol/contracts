@@ -51,9 +51,11 @@ The messageBody must consist of a dictionary which includes the following fields
 | `"PairAsset"` | `String` | The identifier of the pair asset |
 | `"OrderTotal"` | `UInt64` | The total amount of the pair being ordered |
 | `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
+| `"Nonce"` | `UInt64` | Used to distinguish duplicate orders |
 
 The amount of the underlying made available to ZenDex in the transaction must be equal to `"UnderlyingAmount"`.
 The public key used to sign the transaction must be the same as `"MakerPubKey"`.
+Whenever an order is created, a different nonce should be used to distinguish between duplicate orders.
 
 ### Cancelling an order
 
@@ -68,6 +70,7 @@ The messageBody must consist of a dictionary which includes the following fields
 | `"PairAsset"` | `String` | The identifier of the pair asset in the order |
 | `"OrderTotal"` | `UInt64` | The total amount of the pair that was ordered |
 | `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
+| `"Nonce"` | `UInt64` | The nonce used for the order |
 
 The transaction must place the order asset in ZenDex's contract wallet,
 as well as a sufficient quantity of the underlying.
@@ -85,6 +88,7 @@ The messageBody must consist of a dictionary which includes the following fields
 | `"PairAsset"` | `String` | The identifier of the pair asset in the order |
 | `"OrderTotal"` | `UInt64` | The total amount of the pair that was ordered in the order being taken |
 | `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
+| `"Nonce"` | `UInt64` | The nonce used for the order |
 | `"RequestedPayout"` | `UInt64` | The amount of the underlying to pay out |
 
 The transaction must place the order asset being taken and a sufficient amount of the underlying in ZenDex's contract wallet,
