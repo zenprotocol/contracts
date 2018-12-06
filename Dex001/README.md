@@ -18,7 +18,7 @@ ZenDex stores orders as utxos that it locks to itself.
 In this manner, we avoid having a shared state, allowing great parallelism.
 
 When an order is made, the order parameters are hashed together.
-ZenDex mints and single token with that hash as it's sub-identifier (the '*order asset*'),
+ZenDex mints a single token with that hash as it's sub-identifier (the '*order asset*'),
 and locks that to itself.
 
 When an order is taken or cancelled, that token is destroyed.
