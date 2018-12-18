@@ -311,7 +311,7 @@ let addPK (key : FString.t) (value : Extracted.publicKey) = addToDict (key, Data
 
 let addString (key : FString.t) (value : string) = addToDict (key, value |> ZFStar.fsToFstString |> Data.String)
 
-let addPKLock (key : FString.t) (value : Extracted.publicKey) = addToDict (key, Extracted.PKLock value |> Data.Lock) 
+let addPKLock (key : FString.t) (value : Extracted.publicKey) = addToDict (key, Extracted.PKLock (pk2hash value |> Hash.bytes) |> Data.Lock) 
 
 let mkOrderDict (odata : orderData) =
     emptyDict
