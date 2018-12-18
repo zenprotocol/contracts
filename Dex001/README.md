@@ -90,6 +90,7 @@ The messageBody must consist of a dictionary which includes the following fields
 | `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
 | `"Nonce"` | `UInt64` | The nonce used for the order |
 | `"RequestedPayout"` | `UInt64` | The amount of the underlying to pay out |
+| `"ProvidedAmount"` | `UInt64` | The amount of the pair supplied |
 
 The transaction must place the order asset being taken and a sufficient amount of the underlying in ZenDex's contract wallet,
 and must lock an amount α of the order's pair asset to the contract, where

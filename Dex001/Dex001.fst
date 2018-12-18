@@ -366,15 +366,15 @@ val take':
     -> contractId
     -> w: wallet
     -> U64.t
+    -> U64.t
     -> lock
     -> order
-    -> CR.t `cost` (W.size w * 256 + 7719)
-let take' tx contractID w requestedPayout returnAddress order = // 20
-    let! paymentAmount = TX.getAvailableTokens order.pairAsset tx in // 64
+    -> CR.t `cost` (W.size w * 256 + 7650)
+let take' tx contractID w requestedPayout providedAmount returnAddress order = // 15
     begin
-    let! paymentAmountOK = checkRequestedPayout order requestedPayout paymentAmount in // 163
+    let! paymentAmountOK = checkRequestedPayout order requestedPayout providedAmount in // 163
     if paymentAmountOK
-    then takeTx tx contractID w paymentAmount requestedPayout order returnAddress // W.size w * 256 + 7472
+    then takeTx tx contractID w providedAmount requestedPayout order returnAddress // W.size w * 256 + 7472
     else RT.incFailw (W.size w * 256 + 7472) "Incorrect requestedPayout"
     end <: CR.t `cost` (W.size w * 256 + 7635)
 
@@ -383,21 +383,22 @@ val take:
     -> contractId
     -> option data
     -> w: wallet
-    -> CR.t `cost` (W.size w * 256 + 8572)
-let take tx contractID messageBody w = // 29
+    -> CR.t `cost` (W.size w * 256 + 8596)
+let take tx contractID messageBody w = // 41
     let! dict = messageBody >!= tryDict in // 4
-    //begin
     let! requestedPayout = getU64 dict "RequestedPayout" in // 80
-    //begin
     let! returnAddress = getReturnAddress dict in // 71
-    match requestedPayout, returnAddress with
-    | Some requestedPayout, Some returnAddress ->
+    let! providedAmount = getU64 dict "ProvidedAmount" in // 80
+    match requestedPayout, providedAmount, returnAddress with
+    | Some requestedPayout, Some providedAmount, Some returnAddress ->
         let order = getOrder dict in // 669
-        order `RT.bind` take' tx contractID w requestedPayout returnAddress // W.size w * 256 + 7719
-        <: CR.t `cost` (W.size w * 256 + 8388)
-    | None, _ ->
-        RT.autoFailw "Could not parse requestedPayout, or requestedPayout was 0"
-    | _, None ->
+        order `RT.bind` take' tx contractID w requestedPayout providedAmount returnAddress // W.size w * 256 + 7650
+        <: CR.t `cost` (W.size w * 256 + 8319)
+    | None, _, _ ->
+        RT.autoFailw "Could not parse RequestedPayout, or RequestedPayout was 0"
+    | _, None, _ ->
+        RT.autoFailw "Could not parse ProvidedAmount, or ProvidedAmount was 0"
+    | _, _, None ->
         RT.autoFailw "Could not parse returnAddress"
 
 //////////
@@ -416,7 +417,7 @@ val main:
     -> CR.t `cost` ( 9 + begin match command with
                          | "Make" -> 4030
                          | "Cancel" -> W.size w * 256 + 4823
-                         | "Take" -> W.size w * 256 + 8572
+                         | "Take" -> W.size w * 256 + 8596
                          | _ -> 0 end )
 let main tx _ contractID command sender messageBody w _ = // 9
     begin
@@ -426,18 +427,18 @@ let main tx _ contractID command sender messageBody w _ = // 9
         <: CR.t `cost` begin match command with
                        | "Make" -> 4030
                        | "Cancel" -> W.size w * 256 + 4823
-                       | "Take" -> W.size w * 256 + 8572
+                       | "Take" -> W.size w * 256 + 8596
                        | _ -> 0 end
     | "Cancel" ->
         cancel tx contractID sender messageBody w // W.size w * 256 + 4823
     | "Take" ->
-        take tx contractID messageBody w // W.size w * 256 + 8572
+        take tx contractID messageBody w // W.size w * 256 + 8596
     | _ ->
         RT.failw "Unrecognised command"
     end <: CR.t `cost` begin match command with
                        | "Make" -> 4030
                        | "Cancel" -> W.size w * 256 + 4823
-                       | "Take" -> W.size w * 256 + 8572
+                       | "Take" -> W.size w * 256 + 8596
                        | _ -> 0 end
 
 val cf:
@@ -453,5 +454,5 @@ let cf _ _ command _ _ w _ = // 12
     ret ( 9 + begin match command with
               | "Make" -> 4030
               | "Cancel" -> W.size w * 256 + 4823
-              | "Take" -> W.size w * 256 + 8572
+              | "Take" -> W.size w * 256 + 8596
               | _ -> 0 end )
