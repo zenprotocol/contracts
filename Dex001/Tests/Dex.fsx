@@ -1,16 +1,18 @@
-module Asset     = Consensus.Asset
+module FString    = FStar.String
+module Result     = Infrastructure.Result
+module Asset      = Consensus.Asset
 module Contract   = Consensus.Contract
 module ContractId = Consensus.ContractId
-module Hash      = Consensus.Hash
-module Result    = Infrastructure.Result
-module Tx        = Consensus.TxSkeleton
-module Types     = Consensus.Types
-module Data      = Zen.Types.Data
-module Main      = Zen.Types.Main
-module String    = FStar.String
+module Hash       = Consensus.Hash
+module Tx         = Consensus.TxSkeleton
+module Types      = Consensus.Types
+module ZFStar     = Consensus.ZFStar
+module Crypto     = Consensus.Crypto
+module Data       = Zen.Types.Data
+module Main       = Zen.Types.Main
 module Extracted  = Zen.Types.Extracted
-module ZFStar    = Consensus.ZFStar
-module Crypto    = Consensus.Crypto
+
+type CR = Result<(Consensus.TxSkeleton.T * Option<Consensus.Types.Message> * Zen.Types.Main.stateUpdate),string>
 
 #r "../output/Dex001.dll"
 open Dex001
@@ -30,6 +32,8 @@ let FIELD_PAIR_ASSET        = "PairAsset"B
 let FIELD_ORDER_TOTAL       = "OrderTotal"B
 let FIELD_MAKER_PUB_KEY     = "MakerPubKey"B
 let FIELD_NONCE             = "Nonce"B
+let FIELD_REQUESTED_PAYOUT  = "RequestedPayout"B
+let FIELD_RETURN_ADDRESS    = "returnAddress"B
 
 let ZEN_ASSET     = "000000000000000000000000000000000000000000000000000000000000000000000000"
 let XYZ_ASSET     = "000000000000000000012345678901234567899121323539832403208234092343590abc"
@@ -42,8 +46,20 @@ type orderData = {
     orderTotal       : uint64              option  // The total amount of the pair being ordered
     makerPubKey      : Extracted.publicKey option  // The public key of the order maker
     nonce            : uint64              option  // Used to distinguish duplicate orders
+    requestedPayout  : uint64              option  // The amount of the underlying to pay out
+    returnAddress    : Extracted.publicKey option
 }
 
+let odataDefault = {
+    underlyingAsset  = None
+    underlyingAmount = None
+    pairAsset        = None
+    orderTotal       = None
+    makerPubKey      = None
+    nonce            = None
+    requestedPayout  = None
+    returnAddress    = None
+}
 
 
 (*
@@ -85,6 +101,7 @@ let (=<<) f x = Option.bind
 let (>>=) x f = Option.bind f x
 let (<*|) f x = Option.bind (fun x -> Option.map (fun f -> f x) f) x
 let (|*>) x f = Option.bind (fun x -> Option.map (fun f -> f x) f) x
+let sequenceA xs = Infrastructure.Option.traverseA id xs
 
 
 
@@ -97,14 +114,63 @@ let (|*>) x f = Option.bind (fun x -> Option.map (fun f -> f x) f) x
 let disp s x = printfn "\n%s" s; x
 let dispf s x = printfn s x; x
 
+let run_test (tests : System.Collections.Generic.Dictionary<int, string * CR>) (counter : int ref) s x =
+    printfn "\n\u2B24 (%d) - %s:" !counter s;
+    tests.Add(!counter, (s,x));
+    counter := !counter + 1
+    x
+
+let rec concatWith (sep : 'a list) (xss : 'a list list) : 'a list =
+    match xss with
+    | [] -> []
+    | hd :: tl -> hd @ sep @ concatWith sep tl
+
+//let wrap_internal v maxwidth msg =
+//    let v = Seq.toList v
+//    Seq.toList msg
+//    |> fun xs ->
+//        if String.length msg >= maxwidth
+//            then xs
+//                 |> List.splitInto (String.length msg / maxwidth)
+//                 |> List.map (fun s -> v @ s @ v)
+//                 |> concatWith ['\n']
+//                 |> Array.ofList
+//                 |> System.String
+//            else msg
+
+let wrap ul ur bl br h v d
+         msg =
+    let n   = String.length msg
+    printfn " %s%s%s" ul (String.replicate (n + d) h) ur
+//    printfn "%s" (wrap_internal v 100 msg)
+    printfn " %s%s%s" v msg v
+    printfn " %s%s%s" bl (String.replicate (n + d) h) br
+
+let wrap_box =
+    wrap "\u256D" "\u256E" "\u2570" "\u256F" "\u2500" "\u2502"
+
+let wrap_invisible =
+    wrap " " " " " " " " " " " "
+
+let wrap_dbox =
+    wrap "\u2554" "\u2557" "\u255A" "\u255D" "\u2550" "\u2551"  
+
 let pass() =
-    printfn "PASSED"
+    printfn "  \u2705 PASSED"
+//    let msg = sprintf "\u2705 PASSED"
+//    wrap_invisible 1 msg
 
 let passWith e =
-    printfn "PASSED with error: %A" e
+    printfn "  \u2705 PASSED with error: %A" e
+//    let msg = sprintf "\u2705 PASSED with error: %A" e
+//    wrap_invisible 1 msg
 
 let failWith e =
-    printfn "FAILED with error: %A" e
+    printfn "  \u26D4 FAILED with error: %A" e
+//    let msg = sprintf "\u26D4 FAILED with error: %A \u26D4" e
+//    wrap_invisible 1 msg
+//    wrap_box 2 msg
+    
 
 let UNEXPECTED_SUCCESS = "Unexpected success"
 
@@ -118,7 +184,65 @@ let should_FAIL x =
     match x with
     | Ok _    -> failWith UNEXPECTED_SUCCESS
     | Error e -> passWith e
-    x 
+    x
+    
+let should_FAIL_with err x =
+    match x with
+    | Ok _    -> failWith UNEXPECTED_SUCCESS
+    | Error e ->
+        if e = err
+            then passWith e
+            else failWith e
+    x
+
+(* QUERY RESULT *)
+
+type TxSkeleton = Consensus.TxSkeleton.T
+
+type TxFailure =
+    | MissingInput  of (Types.Lock option * string option * uint64 option)
+    | MissingOutput of (Types.Lock option * string option * uint64 option)
+
+type TestFailure =
+    | ExecutionFailure of string
+    | TxFailure of TxFailure list     
+
+let (?=) x oy = match oy with | Some y -> x = y | None -> true 
+
+let collectTxResults (res : Result<unit list, TxFailure list>) : Result<unit, TestFailure> =
+    match res with
+    | Ok _ -> Ok()
+    | Error xs -> Error <| TxFailure xs 
+
+let checkTx' (tests : (TxSkeleton -> Result<unit, TxFailure>) list) (cr : CR) : Result<unit, TestFailure>  =
+    match cr with
+    | Ok (tx,_,_) -> Result.traverseResultA (fun f -> f tx |> Result.mapError List.singleton) tests |> collectTxResults
+    | Error e -> Error <| ExecutionFailure e 
+
+let renderTxError (e : TxFailure) : string =
+    let rndr x = match x with | None -> "_" | Some x -> sprintf "%A" x
+    let rtup (lock, asset, amount) = sprintf "(lock=%s, asset=%s, amount=%s)" (rndr lock) (rndr asset) (rndr amount)
+    match e with
+    | MissingInput t -> sprintf "missing input: %s" (rtup t)
+    | MissingOutput t -> sprintf "missing output: %s" (rtup t)
+
+let checkTx (tests : (TxSkeleton -> Result<unit, TxFailure>) list) (cr : CR) : unit  =
+    match checkTx' tests cr with
+    | Ok() -> pass()
+    | Error (TxFailure es) -> List.map (renderTxError >> failWith) es |> ignore
+    | Error (ExecutionFailure e) -> failWith e
+
+let hasInput (lock : Types.Lock option) (asset : string option) (amount : uint64 option) (tx : TxSkeleton) : Result<unit,TxFailure> =
+    List.exists
+        (function | Tx.PointedOutput (_,inp) -> (inp.lock ?= lock) && (inp.spend.asset ?= (asset |> Option.bind Asset.fromString)) && (inp.spend.amount ?= amount))
+        tx.pInputs
+    |> fun b -> if b then Ok() else Error <| MissingInput (lock, asset, amount)
+
+let hasOutput (lock : Types.Lock option) (asset : string option) (amount : uint64 option) (tx : TxSkeleton) : Result<unit,TxFailure> =
+    List.exists
+        (function | (outp : Types.Output) -> (outp.lock ?= lock) && (outp.spend.asset ?= (asset |> Option.bind Asset.fromString)) && (outp.spend.amount ?= amount))
+        tx.outputs
+    |> fun b -> if b then Ok() else Error <| MissingOutput (lock, asset, amount)
 
 
 
@@ -153,17 +277,41 @@ let contractLock = Types.Contract contractID
 ------------------------------------------------------------------------------------------------------------------------
 *)
 
+let SerializedPublicKeyLength = 33
+
+let private context = Crypto.Native.secp256k1_context_create (Crypto.Native.SECP256K1_CONTEXT_SIGN ||| Crypto.Native.SECP256K1_CONTEXT_VERIFY)
+
+let serialize (Crypto.PublicKey publicKey) =
+    let bytes = Array.create SerializedPublicKeyLength 0uy
+    let mutable length = int64 SerializedPublicKeyLength
+
+    match Crypto.Native.secp256k1_ec_pubkey_serialize(context, bytes, &&length, publicKey, Crypto.Native.SECP256K1_EC_COMPRESSED) with
+    | Crypto.Native.Result.Ok ->
+        if 33L = length then bytes else failwith "Wrong serialized size"
+    | _ -> failwith "failed to serialize public key"
+
+let pk2hash (pk : Extracted.publicKey) : Hash.Hash =
+    serialize (Crypto.PublicKey pk) |> Hash.compute
+
+let lockPK pk = Some <| Types.PK (pk2hash pk)
+
+let lockContract = Some <| Types.Contract contractID
+
+let lockDestroy = Some Types.Destroy
+
 let emptyDict = Zen.Dictionary.empty
 
 let addToDict (key, value) dict =
     Zen.Dictionary.add key value dict
     |> Zen.Cost.Realized.__force
 
-let addU64 (key : String.t) (value : uint64) = addToDict (key, Data.U64 value)
+let addU64 (key : FString.t) (value : uint64) = addToDict (key, Data.U64 value)
 
-let addPK (key : String.t) (value : Extracted.publicKey) = addToDict (key, Data.PublicKey value)
+let addPK (key : FString.t) (value : Extracted.publicKey) = addToDict (key, Data.PublicKey value)
 
-let addString (key : String.t) (value : string) = addToDict (key, value |> ZFStar.fsToFstString |> Data.String)
+let addString (key : FString.t) (value : string) = addToDict (key, value |> ZFStar.fsToFstString |> Data.String)
+
+let addPKLock (key : FString.t) (value : Extracted.publicKey) = addToDict (key, Extracted.PKLock value |> Data.Lock) 
 
 let mkOrderDict (odata : orderData) =
     emptyDict
@@ -173,6 +321,8 @@ let mkOrderDict (odata : orderData) =
     |> match odata.orderTotal       with | None -> id | Some x -> addU64     FIELD_ORDER_TOTAL        x
     |> match odata.makerPubKey      with | None -> id | Some x -> addPK      FIELD_MAKER_PUB_KEY      x
     |> match odata.nonce            with | None -> id | Some x -> addU64     FIELD_NONCE              x
+    |> match odata.requestedPayout  with | None -> id | Some x -> addU64     FIELD_REQUESTED_PAYOUT   x
+    |> match odata.returnAddress    with | None -> id | Some x -> addPKLock  FIELD_RETURN_ADDRESS     x
 
 let mkOrderData =
     mkOrderDict
@@ -251,13 +401,18 @@ let computeOrderAsset (odata : orderData) =
 
 
 
+
+
+
 (*
 ------------------------------------------------------------------------------------------------------------------------
 ======================================== EXECUTE CONTRACT ==============================================================
 ------------------------------------------------------------------------------------------------------------------------
 *)
 
-let valid_order_make (odata : orderData) =
+(* MAKE *)
+
+let valid_order_make (odata : orderData) : CR =
     let txSkeleton  =
         Option.defaultValue emptyTx <| option {
             let! asset  = odata.underlyingAsset >>= Asset.fromString 
@@ -272,32 +427,15 @@ let valid_order_make (odata : orderData) =
     let initState   = None
     contractFn txSkeleton context contractID command sender messageBody wallet initState
 
-let valid_order_cancel (odata : orderData) =
-    let txSkeleton  = emptyTx
-    let context     = {Types.ContractContext.blockNumber=1ul; Types.ContractContext.timestamp=0UL} : Types.ContractContext 
-    let command     = CMD_CANCEL
-    let sender      = Main.PK (odata.makerPubKey |> Option.defaultWith generatePublicKey)
-    let messageBody = Some <| mkOrderData odata
-    let wallet =
-        Option.defaultValue [] <| option {
-            let! unlAsset  = odata.underlyingAsset >>= Asset.fromString 
-            let! unlAmount = odata.underlyingAmount
-            let! ordAsset  = computeOrderAsset odata
-            return
-                [ mkPointedOutput (Types.PK zeroHash)         unlAsset unlAmount
-                ; mkPointedOutput (Types.Contract contractID) ordAsset 1UL
-                ]
-        }
-    let initState   = None
-    contractFn txSkeleton context contractID command sender messageBody wallet initState
-
-let order_make_modified_tx (txAssetAmount : (string * uint64) option) (odata : orderData) =
+let order_make_modified_tx (txAssetAmounts : (string * uint64) list) (odata : orderData) : CR =
     let txSkeleton  =
-        Option.defaultValue emptyTx <| option {
-            let! asset  = txAssetAmount |@> fst >>= Asset.fromString 
-            let! amount = txAssetAmount |@> snd
-            return mkTx [mkInput (Types.PK zeroHash) asset amount] [] 
-        }
+        txAssetAmounts
+        |> List.map ( fun (assetString, amount) -> option {
+            let! asset = assetString |> Asset.fromString
+            return mkInput (Types.PK zeroHash) asset amount
+            } )
+        |> sequenceA |> function | None -> failwith "ERROR: Invalid asset string" | Some xs -> xs
+        |> fun xs -> mkTx xs []
     let context     = {Types.ContractContext.blockNumber=1ul; Types.ContractContext.timestamp=0UL} : Types.ContractContext 
     let command     = CMD_MAKE
     let sender      = Main.PK (odata.makerPubKey |> Option.defaultWith generatePublicKey)
@@ -306,7 +444,7 @@ let order_make_modified_tx (txAssetAmount : (string * uint64) option) (odata : o
     let initState   = None
     contractFn txSkeleton context contractID command sender messageBody wallet initState
 
-let order_make_modified_sender (pk : Extracted.publicKey) (odata : orderData) =
+let order_make_modified_sender (pk : Extracted.publicKey) (odata : orderData) : CR =
     let txSkeleton  =
         Option.defaultValue emptyTx <| option {
             let! asset  = odata.underlyingAsset >>= Asset.fromString 
@@ -321,7 +459,7 @@ let order_make_modified_sender (pk : Extracted.publicKey) (odata : orderData) =
     let initState   = None
     contractFn txSkeleton context contractID command sender messageBody wallet initState
 
-let order_make_modified_wallet (unlAmount : uint64 option, pairAmount : uint64 option, ordAmount : uint64 option) (odata : orderData) =
+let order_make_modified_wallet (unlAmount : uint64 option, pairAmount : uint64 option, ordAmount : uint64 option) (odata : orderData) : CR =
     let txSkeleton  =
         Option.defaultValue emptyTx <| option {
             let! asset  = odata.underlyingAsset >>= Asset.fromString 
@@ -343,5 +481,77 @@ let order_make_modified_wallet (unlAmount : uint64 option, pairAmount : uint64 o
                         ; mkPointedOutput (Types.Contract contractID) ordAsset  <@| ordAmount
                         ] |> List.choose id
                 }
+    let initState   = None
+    contractFn txSkeleton context contractID command sender messageBody wallet initState
+
+(* CANCEL *)
+
+let valid_order_cancel (odata : orderData) : CR =
+    let txSkeleton  = emptyTx
+    let context     = {Types.ContractContext.blockNumber=1ul; Types.ContractContext.timestamp=0UL} : Types.ContractContext 
+    let command     = CMD_CANCEL
+    let sender      = Main.PK (odata.makerPubKey |> Option.defaultWith generatePublicKey)
+    let messageBody = Some <| mkOrderData odata
+    let wallet =
+        Option.defaultValue [] <| option {
+            let! unlAsset  = odata.underlyingAsset >>= Asset.fromString 
+            let! unlAmount = odata.underlyingAmount
+            let! ordAsset  = computeOrderAsset odata
+            return
+                [ mkPointedOutput (Types.PK zeroHash)         unlAsset unlAmount
+                ; mkPointedOutput (Types.Contract contractID) ordAsset 1UL
+                ]
+        }
+    let initState   = None
+    contractFn txSkeleton context contractID command sender messageBody wallet initState
+
+let order_cancel_modified_wallet (unlAmount : uint64 option, pairAmount : uint64 option, ordAmount : uint64 option) (odata : orderData) : CR =
+    let txSkeleton  =
+        Option.defaultValue emptyTx <| option {
+            let! asset  = odata.underlyingAsset >>= Asset.fromString 
+            let! amount = odata.underlyingAmount
+            return mkTx [mkInput (Types.PK zeroHash) asset amount] [] 
+        }
+    let context     = {Types.ContractContext.blockNumber=1ul; Types.ContractContext.timestamp=0UL} : Types.ContractContext 
+    let command     = CMD_CANCEL
+    let sender      = Main.PK (odata.makerPubKey |> Option.defaultWith generatePublicKey)
+    let messageBody = Some <| mkOrderData odata
+    let wallet      =
+        Option.defaultValue [] <| option {
+                    let! unlAsset  = odata.underlyingAsset >>= Asset.fromString
+                    let! pairAsset = odata.pairAsset       >>= Asset.fromString 
+                    let! ordAsset  = computeOrderAsset odata
+                    return
+                        [ mkPointedOutput (Types.PK zeroHash)         unlAsset  <@| unlAmount
+                        ; mkPointedOutput (Types.PK zeroHash)         pairAsset <@| pairAmount
+                        ; mkPointedOutput (Types.Contract contractID) ordAsset  <@| ordAmount
+                        ] |> List.choose id
+                }
+    let initState   = None
+    contractFn txSkeleton context contractID command sender messageBody wallet initState
+
+(* TAKE *)
+
+let valid_order_take_full (odata : orderData) : CR =
+    let txSkeleton  =
+            Option.defaultValue emptyTx <| option {
+                let! asset  = odata.pairAsset >>= Asset.fromString 
+                let! amount = odata.orderTotal
+                return mkTx [mkInput (Types.PK zeroHash) asset amount] [] 
+            }
+    let context     = {Types.ContractContext.blockNumber=1ul; Types.ContractContext.timestamp=0UL} : Types.ContractContext 
+    let command     = CMD_TAKE 
+    let sender      = Main.PK <| Option.defaultWith generatePublicKey odata.returnAddress
+    let messageBody = Some <| mkOrderData { odata with requestedPayout = odata.underlyingAmount }
+    let wallet      =
+        Option.defaultValue [] <| option {
+            let! unlAsset  = odata.underlyingAsset >>= Asset.fromString 
+            let! unlAmount = odata.underlyingAmount
+            let! ordAsset  = computeOrderAsset odata
+            return
+                [ mkPointedOutput (Types.PK zeroHash)         unlAsset unlAmount
+                ; mkPointedOutput (Types.Contract contractID) ordAsset 1UL
+                ]
+        }
     let initState   = None
     contractFn txSkeleton context contractID command sender messageBody wallet initState

@@ -1,11 +1,16 @@
 #load "Dex.fsx"
 
 open Dex
-open System  
+open System
 
-let test_make_1 =
-    disp "TEST 1 - valid Make order - 100 ZP -> 100 ZP:"
+let tests = new System.Collections.Generic.Dictionary<int, string * CR>()
+let test_counter = ref 1
+
+let test = run_test tests test_counter
+
+test "valid Make order - 100 ZP -> 100 ZP"
     <| valid_order_make {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
         pairAsset        = Some <| ZEN_ASSET
@@ -15,9 +20,9 @@ let test_make_1 =
     }
     |> should_PASS
 
-let test_make_2 =
-    disp "TEST 2 - valid Make order - 100 ZP -> 5 ZP:"
+test "valid Make order - 100 ZP -> 5 ZP"
     <| valid_order_make {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
         pairAsset        = Some <| ZEN_ASSET
@@ -27,9 +32,9 @@ let test_make_2 =
     }
     |> should_PASS 
 
-let test_make_3 =
-    disp "TEST 3 - valid Make order - 100 ZP -> 5 XYZ:"
+test "valid Make order - 100 ZP -> 5 XYZ"
     <| valid_order_make {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
         pairAsset        = Some <| XYZ_ASSET
@@ -39,9 +44,9 @@ let test_make_3 =
     }
     |> should_PASS
 
-let test_make_4 =
-    disp "TEST 4 - Valid Make order - 5 XYZ -> 100 ZP:" 
+test "Valid Make order - 5 XYZ -> 100 ZP" 
     <| valid_order_make {
+    odataDefault with
         underlyingAsset  = Some <| XYZ_ASSET
         underlyingAmount = Some <| 5UL
         pairAsset        = Some <| ZEN_ASSET
@@ -51,9 +56,9 @@ let test_make_4 =
     }
     |> should_PASS 
 
-let test_make_5 =
-    disp "TEST 5 - 0 underying amount:" 
+test "0 underying amount" 
     <| valid_order_make {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 0UL
         pairAsset        = Some <| ZEN_ASSET
@@ -61,11 +66,11 @@ let test_make_5 =
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
+    |> should_FAIL_with "Could not parse UnderlyingAmount, or UnderlyingAmount was 0"
 
-let test_make_6 =
-    disp "TEST 6 - 0 pair amount:" 
+test "0 pair amount" 
     <| valid_order_make {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
         pairAsset        = Some <| ZEN_ASSET
@@ -73,11 +78,11 @@ let test_make_6 =
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
+    |> should_FAIL_with "Could not parse OrderTotal, or OrderTotal was 0"
 
-let test_make_7 =
-    disp "TEST 7 - 0 underlying & pair amount:" 
+test "0 underlying & pair amount" 
     <| valid_order_make {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 0UL
         pairAsset        = Some <| ZEN_ASSET
@@ -85,95 +90,125 @@ let test_make_7 =
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
-
-let test_make_8 =
-    let txAssetAmount = Some (ZEN_ASSET, 100UL)
-    disp "TEST 8 - no underlying asset in body:" 
-    <| order_make_modified_tx txAssetAmount {
+    |> should_FAIL_with "Could not parse UnderlyingAmount, or UnderlyingAmount was 0"
+ 
+test "no underlying asset in body" 
+    <| order_make_modified_tx [ZEN_ASSET, 100UL] {
+    odataDefault with
         underlyingAsset  = None
-        underlyingAmount = Some <| 0UL
-        pairAsset        = Some <| ZEN_ASSET
-        orderTotal       = Some <| 0UL
+        underlyingAmount = Some <| 100UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
-
-let test_make_9 =
-    let txAssetAmount = Some (ZEN_ASSET, 100UL)
-    disp "TEST 9 - no underlying amount in body:" 
-    <| order_make_modified_tx txAssetAmount {
+    |> should_FAIL_with "Could not parse UnderlyingAsset"
+ 
+test "no underlying amount in body" 
+    <| order_make_modified_tx [ZEN_ASSET, 100UL] {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = None
-        pairAsset        = Some <| ZEN_ASSET
-        orderTotal       = Some <| 0UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
+    |> should_FAIL_with "Could not parse UnderlyingAmount, or UnderlyingAmount was 0"
 
-let test_make_10 =
-    let txAssetAmount = Some (ZEN_ASSET, 100UL)
-    disp "TEST 10 - no underlying asset & amount in body:" 
-    <| order_make_modified_tx txAssetAmount {
+test "no underlying asset & amount in body" 
+    <| order_make_modified_tx [ZEN_ASSET, 100UL] {
+    odataDefault with
         underlyingAsset  = None
         underlyingAmount = None
-        pairAsset        = Some <| ZEN_ASSET
-        orderTotal       = Some <| 0UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
+    |> should_FAIL_with "Could not parse UnderlyingAsset"
 
-let test_make_11 =
-    let txAssetAmount = None
-    disp "TEST 11 - empty tx:"
-    <| order_make_modified_tx txAssetAmount {
+test "empty tx"
+    <| order_make_modified_tx [] {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
-        pairAsset        = Some <| ZEN_ASSET
-        orderTotal       = Some <| 100UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
+    |> should_FAIL_with "Incorrect amount of UnderlyingAsset Received"
 
-let test_make_12 =
-    let txAssetAmount = Some (XYZ_ASSET, 100UL)
-    disp "TEST 12 - incorrect asset in tx:"
-    <| order_make_modified_tx txAssetAmount {
+test "composite tx"
+    <| order_make_modified_tx [(XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL)] {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
-        pairAsset        = Some <| ZEN_ASSET
-        orderTotal       = Some <| 100UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
+    |> should_PASS
 
-let test_make_13 =
-    let txAssetAmount = Some (ZEN_ASSET, 99UL)
-    disp "TEST 13 - incorrect amount in tx (amount too small):"
-    <| order_make_modified_tx txAssetAmount {
+test "incorrect asset in tx"
+    <| order_make_modified_tx [XYZ_ASSET, 100UL] {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
-        pairAsset        = Some <| ZEN_ASSET
-        orderTotal       = Some <| 100UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
+    |> should_FAIL_with "Incorrect amount of UnderlyingAsset Received"
 
-let test_make_14 =
-    let txAssetAmount = Some (ZEN_ASSET, 101UL)
-    disp "TEST 14 - incorrect amount in tx (amount too big):"
-    <| order_make_modified_tx txAssetAmount {
+test "incorrect amount in tx (amount too small)"
+    <| order_make_modified_tx [ZEN_ASSET, 99UL] {
+    odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
-        pairAsset        = Some <| ZEN_ASSET
-        orderTotal       = Some <| 100UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_FAIL
+    |> should_FAIL_with "Incorrect amount of UnderlyingAsset Received"
+
+
+test "incorrect amount in tx (amount too big)"
+    <| order_make_modified_tx [ZEN_ASSET, 101UL] {
+    odataDefault with
+        underlyingAsset  = Some <| ZEN_ASSET
+        underlyingAmount = Some <| 100UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
+        makerPubKey      = Some <| generatePublicKey()
+        nonce            = Some <| 1UL
+    }
+    |> should_FAIL_with "Incorrect amount of UnderlyingAsset Received"
+
+test "wrong maker"
+    <| order_make_modified_sender (generatePublicKey()) {
+    odataDefault with
+        underlyingAsset  = Some <| ZEN_ASSET
+        underlyingAmount = Some <| 100UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
+        makerPubKey      = Some <| generatePublicKey()
+        nonce            = Some <| 1UL
+    }
+    |> should_FAIL_with "SenderPubKey must match MakerPubKey"
+
+test "nonempty wallet"
+    <| order_make_modified_wallet (Some 100UL, Some 600UL, Some 10UL) {
+    odataDefault with
+        underlyingAsset  = Some <| ZEN_ASSET
+        underlyingAmount = Some <| 100UL
+        pairAsset        = Some <| XYZ_ASSET
+        orderTotal       = Some <| 600UL
+        makerPubKey      = Some <| generatePublicKey()
+        nonce            = Some <| 1UL
+    }
+    |> should_PASS
