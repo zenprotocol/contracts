@@ -288,11 +288,14 @@ val checkRequestedPayout:
     order
     -> requestedPayout: U64.t
     -> paymentAmount: U64.t
-    -> bool `cost` 163
-let checkRequestedPayout { underlyingAmount=ua; orderTotal=ot} rp pa = // 77
+    -> bool `cost` 171
+let checkRequestedPayout { underlyingAmount=ua; orderTotal=ot} rp pa = // 85
     // we want to check that
-    // requestedPayout = floor (underlyingAmount * (paymentAmount / orderTotal))
-    // which is equivalent to
+    // 1) requestedPayout <= underlyingAmount
+    // 2) paymentAmount <= orderTotal
+    // 3) requestedPayout = floor (underlyingAmount * (paymentAmount / orderTotal))
+
+    // note that 3) is equivalent to
     // underlyingAmount * paymentAmount
     // < requestedPayout * orderTotal + orderTotal
     // <= underlyingAmount * paymentAmount + orderTotal
@@ -322,8 +325,8 @@ let checkRequestedPayout { underlyingAmount=ua; orderTotal=ot} rp pa = // 77
     // requestedPayout * orderTotal + orderTotal <= underlyingAmount * paymentAmount + orderTotal
     let rp_ot_ot_lte_ua_pa_ot = (rp_ot_ot.hi <^ ua_pa_ot.hi)
                              || (rp_ot_ot.hi = ua_pa_ot.hi && rp_ot_ot.lo <=^ ua_pa_ot.lo) in
-    // both conditions must hold
-    ret (ua_pa_lt_rp_ot_ot && rp_ot_ot_lte_ua_pa_ot)
+    // all 3 inequality relations must hold
+    ret (rp <=^ ua && pa <=^ ot && ua_pa_lt_rp_ot_ot && rp_ot_ot_lte_ua_pa_ot)
 
 // updates an order in the case of a partial fill
 val updateOrder:
@@ -369,21 +372,21 @@ val take':
     -> U64.t
     -> lock
     -> order
-    -> CR.t `cost` (W.size w * 256 + 7650)
+    -> CR.t `cost` (W.size w * 256 + 7658)
 let take' tx contractID w requestedPayout providedAmount returnAddress order = // 15
     begin
-    let! paymentAmountOK = checkRequestedPayout order requestedPayout providedAmount in // 163
+    let! paymentAmountOK = checkRequestedPayout order requestedPayout providedAmount in // 171
     if paymentAmountOK
     then takeTx tx contractID w providedAmount requestedPayout order returnAddress // W.size w * 256 + 7472
     else RT.incFailw (W.size w * 256 + 7472) "Incorrect requestedPayout"
-    end <: CR.t `cost` (W.size w * 256 + 7635)
+    end <: CR.t `cost` (W.size w * 256 + 7643)
 
 val take:
     txSkeleton
     -> contractId
     -> option data
     -> w: wallet
-    -> CR.t `cost` (W.size w * 256 + 8596)
+    -> CR.t `cost` (W.size w * 256 + 8604)
 let take tx contractID messageBody w = // 41
     let! dict = messageBody >!= tryDict in // 4
     let! requestedPayout = getU64 dict "RequestedPayout" in // 80
@@ -392,8 +395,8 @@ let take tx contractID messageBody w = // 41
     match requestedPayout, providedAmount, returnAddress with
     | Some requestedPayout, Some providedAmount, Some returnAddress ->
         let order = getOrder dict in // 669
-        order `RT.bind` take' tx contractID w requestedPayout providedAmount returnAddress // W.size w * 256 + 7650
-        <: CR.t `cost` (W.size w * 256 + 8319)
+        order `RT.bind` take' tx contractID w requestedPayout providedAmount returnAddress // W.size w * 256 + 7658
+        <: CR.t `cost` (W.size w * 256 + 8327)
     | None, _, _ ->
         RT.autoFailw "Could not parse RequestedPayout, or RequestedPayout was 0"
     | _, None, _ ->
@@ -417,7 +420,7 @@ val main:
     -> CR.t `cost` ( 9 + begin match command with
                          | "Make" -> 4030
                          | "Cancel" -> W.size w * 256 + 4823
-                         | "Take" -> W.size w * 256 + 8596
+                         | "Take" -> W.size w * 256 + 8604
                          | _ -> 0 end )
 let main tx _ contractID command sender messageBody w _ = // 9
     begin
@@ -427,18 +430,18 @@ let main tx _ contractID command sender messageBody w _ = // 9
         <: CR.t `cost` begin match command with
                        | "Make" -> 4030
                        | "Cancel" -> W.size w * 256 + 4823
-                       | "Take" -> W.size w * 256 + 8596
+                       | "Take" -> W.size w * 256 + 8604
                        | _ -> 0 end
     | "Cancel" ->
         cancel tx contractID sender messageBody w // W.size w * 256 + 4823
     | "Take" ->
-        take tx contractID messageBody w // W.size w * 256 + 8596
+        take tx contractID messageBody w // W.size w * 256 + 8604
     | _ ->
         RT.failw "Unrecognised command"
     end <: CR.t `cost` begin match command with
                        | "Make" -> 4030
                        | "Cancel" -> W.size w * 256 + 4823
-                       | "Take" -> W.size w * 256 + 8596
+                       | "Take" -> W.size w * 256 + 8604
                        | _ -> 0 end
 
 val cf:
@@ -454,5 +457,5 @@ let cf _ _ command _ _ w _ = // 12
     ret ( 9 + begin match command with
               | "Make" -> 4030
               | "Cancel" -> W.size w * 256 + 4823
-              | "Take" -> W.size w * 256 + 8596
+              | "Take" -> W.size w * 256 + 8604
               | _ -> 0 end )
