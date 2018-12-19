@@ -141,7 +141,7 @@ test "empty tx"
     |> should_FAIL_with "Incorrect amount of UnderlyingAsset Received"
 
 test "composite tx"
-    <| order_make_modified_tx [(XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL)] {
+    <| order_make_modified_tx [(XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL)] {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
