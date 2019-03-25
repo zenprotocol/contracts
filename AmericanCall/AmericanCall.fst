@@ -116,18 +116,6 @@ let cpkLock (cpk:cpk): lock `cost` 218 =
                    >>= Hash.finalize in //20
     ret (PKLock cpkHash)
 
-let wallet_size_m_n (wallet:wallet) (m n:nat): Lemma begin
-        (W.size wallet * m) + (W.size wallet * n) == W.size wallet * (m + n)
-    end = ()
-
-let wallet_size_m_n_j_k (wallet:wallet) (m n j k:nat): Lemma begin
-        (W.size wallet*m+j) + (W.size wallet*n+k) == W.size wallet*(m+n)+(j+k)
-    end = wallet_size_m_n wallet m n; ()
-
-let wallet_size_add_commutative (wallet:wallet) (x n y:nat): Lemma begin
-        x + (W.size wallet * n + y) == (W.size wallet * n + (y + x))
-    end = ()
-
 // add 2 spends to a tx from the wallet
 let spend2FromWallet (contractID:contractId)
                      (wallet:wallet)
@@ -143,7 +131,7 @@ let spend2FromWallet (contractID:contractId)
 // issuing
 //
 
-let issue (tx:txSkeleton) (contractID:contractId) (args:args) (issuerCPK:cpk)
+let issue (tx:txSkeleton) (contractID:contractId) (issuerCPK:cpk) (args:args)
           : CR.t `cost` 1947 = let open U64 in
     // get the amount of collateral available in the tx
     let! collateral = TX.getAvailableTokens args.pairAsset tx in // 64
@@ -172,7 +160,7 @@ let issue (tx:txSkeleton) (contractID:contractId) (args:args) (issuerCPK:cpk)
 //
 
 let exercise (tx:txSkeleton) ({timestamp=ts}:context) (contractID:contractId)
-             (senderCPK:cpk) (args:args) (wallet:wallet)
+             (senderCPK:cpk) (wallet:wallet) (args:args)
              : CR.t `cost` (W.size wallet * 256 + 2549) = let open U64 in
     if Some? args.issuer then begin
         let! (senderAddress, issuerAddress, assets, options, baseAmount) = begin // 1906
@@ -212,42 +200,83 @@ let exercise (tx:txSkeleton) ({timestamp=ts}:context) (contractID:contractId)
 
 
 //
-// closing
+// expiring
 //
-(*)
-let closeTX (tx:txSkeleton) (contractID:contractId)
-            (args:args{Some? args.issuer/\ Some? args.options})
-            (totalPayout:U64.t) (wallet:wallet): CR.t `cost` 1627 =
-    let! assets = getAssets contractID args in // 1342
-    let issuerCPK, options = Some?.v args.issuer, Some?.v args.options in
-    let! issuerAddress = cpkLock issuerCPK in // 218
-    // destroy the outstandingAssets
-    // lock the pair assets to the issuer address
-    TX.lockToAddress args.pairAsset totalPayout issuerAddress tx // 64
-    >>= CR.ofTxSkel // 3
 
-let close (tx:txSkeleton)
-          ({timestamp=ts}:context)
-          (contractID:contractId)
-          (senderCPK:cpk)
-          (args:args)
-          (wallet:wallet)
-          : CR.t `cost` (W.size wallet * 128 + 1883)
-          = let open U64 in
-    let args = { args with issuer=match args.issuer with
-                                  | Some issuer -> Some issuer
-                                  | None -> Some senderCPK } in
-    if Some? args.options then begin
-        let options = Some?.v args.options in
-        begin match ts >^ args.expiry, checked_mul options args.payout with
-        | true, Some totalPayout -> begin
-            let f = closeTX tx contractID args totalPayout wallet in
-            RT.autoFailw "Could not parse Options" (*
-            // add the outstandingAssets from the contract wallet
-            tx >>= TX.fromWallet assets.outstandingAsset options contractID wallet
-               >>= CR.ofOptionTxSkel "Could not generate tx from wallet" // 3
-            *) end <: CR.t `cost` (W.size wallet * 128 + 1883)
-        | false, _ -> RT.autoFailw "Cannot close before expiry"
-        | _, None -> RT.autoFailw "Overflow in calculating total payout. Try again with lower amount"
-        end end <: CR.t `cost` (W.size wallet * 128 + 1883)
-    else RT.autoFailw "Could not parse Options"
+let expireTX (tx:txSkeleton) (contractID:contractId)
+            (args:args{Some? args.issuer/\ Some? args.options})
+            (wallet:wallet): CR.t `cost` (W.size wallet * 256 + 2075) =
+    let options = Some?.v args.options in
+    let totalPayout = U64.checked_mul options args.payout in
+    match totalPayout with
+    | Some totalPayout ->
+        let! issuerAddress = cpkLock (Some?.v args.issuer) in // 218
+        let! assets = getAssets contractID args in // 1342
+        // destroy the outstandingAssets
+        TX.destroy options assets.outstandingAsset tx // 64
+        // lock the pair assets to the issuer address
+        >>= TX.lockToAddress args.pairAsset totalPayout issuerAddress // 64
+        // add outstandingAsset and pairAsset inputs from wallet
+        >>= spend2FromWallet contractID wallet // W.size wallet * 256 + 387
+                ({ asset=args.pairAsset;          amount=totalPayout })
+                ({ asset=assets.outstandingAsset; amount=options })
+    | None ->
+        RT.autoFailw "Overflow in calculating total payout. Try again with lower amount"
+
+val expire: txSkeleton -> context -> contractId -> cpk -> wallet:wallet -> args
+            -> CR.t `cost` (W.size wallet * 256 + 2075)
+let expire tx ({timestamp=timestamp}) contractID senderCPK wallet args =
+    let issuer = match args.issuer with
+                 | Some issuer -> issuer
+                 | None -> senderCPK in
+    match U64.(timestamp >^ args.expiry), Some? args.options with
+    | true, true ->
+        expireTX tx contractID ({ args with issuer = Some issuer }) wallet
+    | false, _ ->
+        RT.autoFailw "Cannot close before expiry"
+    | _, false ->
+        RT.autoFailw "Could not parse Options"
+
+//
+// exports
+//
+
+type mainCR (command:string) (wallet:wallet) (n:nat) = CR.t `cost` begin
+    n + ( match command with
+          | "Issue" -> 1947
+          | "Exercise" -> W.size wallet * 256 + 2549
+          | "Expire" -> W.size wallet * 256 + 2075
+          | _ -> 0 ) end
+
+val main: txSkeleton -> context -> contractId -> command:string
+          -> sender -> option data -> wallet:wallet -> option data
+          -> mainCR command wallet 858
+let main tx context contractID command sender msg wallet _ =
+    let aux (args:args) (senderCPK:cpk): mainCR command wallet 0 =
+        match command with
+        | "Issue" ->
+            issue tx contractID senderCPK args // 1947
+            <: mainCR command wallet 0
+        | "Exercise" ->
+            exercise tx context contractID senderCPK wallet args // W.size wallet * 256 + 2549
+        | "Expire" ->
+            expire tx context contractID senderCPK wallet args // W.size wallet * 256 + 2075
+        | _ ->
+            RT.failw "Invalid Command" in
+    let args: result args `cost` 726 =
+        Zen.Data.( msg >!= tryDict) // 4
+        >>= parseArgs in // 722
+    let senderCPK: result cpk `cost` 132 =
+        match sender with
+        | PK senderPK ->
+            compress senderPK >>= RT.ok // 132
+        | _ ->
+            RT.autoFailw "Sender must be PK" in
+    RT.bind2 args senderCPK aux
+
+let cf _ _ _ command _ _ wallet _ =
+    ret (858 + ( match command with
+                 | "Issue" -> 2805
+                 | "Exercise" -> W.size wallet * 256 + 3407
+                 | "Expire" -> W.size wallet * 256 + 2933
+                 | _ -> 0 ))
