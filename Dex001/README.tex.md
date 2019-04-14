@@ -51,11 +51,9 @@ The messageBody must consist of a dictionary which includes the following fields
 | `"PairAsset"` | `String` | The identifier of the pair asset |
 | `"OrderTotal"` | `UInt64` | The total amount of the pair being ordered |
 | `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
-| `"Nonce"` | `UInt64` | Used to distinguish duplicate orders |
 
 The amount of the underlying made available to ZenDex in the transaction must be equal to `"UnderlyingAmount"`.
 The public key used to sign the transaction must be the same as `"MakerPubKey"`.
-Whenever an order is created, a different nonce should be used to distinguish between duplicate orders.
 
 ### Cancelling an order
 
@@ -70,7 +68,6 @@ The messageBody must consist of a dictionary which includes the following fields
 | `"PairAsset"` | `String` | The identifier of the pair asset in the order |
 | `"OrderTotal"` | `UInt64` | The total amount of the pair that was ordered |
 | `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
-| `"Nonce"` | `UInt64` | The nonce used for the order |
 
 The transaction must place the order asset in ZenDex's contract wallet,
 as well as a sufficient quantity of the underlying.
@@ -88,23 +85,26 @@ The messageBody must consist of a dictionary which includes the following fields
 | `"PairAsset"` | `String` | The identifier of the pair asset in the order |
 | `"OrderTotal"` | `UInt64` | The total amount of the pair that was ordered in the order being taken |
 | `"MakerPubKey"` | `PublicKey` | The public key of the order maker |
-| `"Nonce"` | `UInt64` | The nonce used for the order |
 | `"RequestedPayout"` | `UInt64` | The amount of the underlying to pay out |
 | `"ProvidedAmount"` | `UInt64` | The amount of the pair supplied |
 
 The transaction must place the order asset being taken and a sufficient amount of the underlying in ZenDex's contract wallet,
 and must lock an amount α of the order's pair asset to the contract, where
-![Requested Payout Formula](doc/tex/RequestedPayout.png)
+$\texttt{Payout} =
+    \texttt{UnderlyingAmount} \times \frac{\texttt{PaymentAmount}}{\texttt{OrderTotal}}$
 
 ## Notes
 
 Orders are expressed in terms of underlying amount and pair amount to allow for rational price ratios - eg. a trade of 5α for 7β, or 13β for 11γ.
 This is not easily expressed as a 'price per' with only integer arithmetic.
-The payout for a partial fill should, assuming arbitrarily divisible assets, be calculated as
-![Rational Payout Formula](doc/tex/RationalPayout.png)
+The payout for a partial fill should, assuming arbitrarily divisible assets, be calculated as $\texttt{Payout} =
+    \texttt{UnderlyingAmount} \times \frac{\texttt{PaymentAmount}}{\texttt{OrderTotal}}$
 
 However, since we do not have arbitrarily divisible assets, we denote orders in the smallest unit of each asset and compute the floor, so that
-![Payout Formula](doc/tex/Payout.png)
+$\texttt{Payout} =
+    \left \lfloor
+    {\texttt{UnderlyingAmount} \times \frac{\texttt{PaymentAmount}}{\texttt{OrderTotal}}}
+    \right \rfloor$
 
 The underlying amount, order total, and payment amount are all 64 bit unsigned integers.
 Version 0 ZF* contracts lack integer representations larger than this, and so we are tasked with implementing double-word arithmetic in order to calculate the payoff.
