@@ -5,15 +5,20 @@ open Zen.Cost
 open Zen.Types
 open Zen.Data
 
-module U64 = FStar.UInt64
-module RT = Zen.ResultT
-module Dict = Zen.Dictionary
-module Sha3 = Zen.Hash.Sha3
+module U64   = FStar.UInt64
+module RT    = Zen.ResultT
+module Dict  = Zen.Dictionary
+module Sha3  = Zen.Hash.Sha3
+module TX    = Zen.TxSkeleton
+module CR    = Zen.ContractResult
+module Asset = Zen.Asset
 
 type ticker = s:string {FStar.String.length s <= 4}
 
 // compressed public key
 type cpk = byte ** hash
+
+type preAuditPath = p: list data{length p <= 31}
 
 type auditPath = p: list hash{length p <= 31}
 
@@ -58,9 +63,51 @@ type redemption = {
 
 (*
 -------------------------------------------------------------------------------
+========== UTILITY FUNCTIONS ==================================================
+-------------------------------------------------------------------------------
+*)
+
+let runOpt (#a #s:Type) (#m:nat) (update:a -> s -> s `cost` m) (x:option a) (st:s): s `cost` m =
+    Zen.Option.maybe (incRet m) update x st
+
+// compress a public key
+let compress (pk:publicKey): cpk `cost` 132 =
+    let open FStar.UInt8 in // 13
+    let parity = (Zen.Array.item 32 pk %^ 2uy) +^ 2uy in
+    let aux (i:nat{i < 32}): byte `cost` 0 =
+        ret (Zen.Array.item (31-i) pk) in
+    let! x = Zen.Array.init_pure 32 aux in // 292
+    ret (parity, x)
+
+let updateCPK ((parity, h):cpk) (s:Sha3.t): Sha3.t `cost` 198 =
+    ret s
+    >>= Sha3.updateByte parity
+    >>= Sha3.updateHash h
+
+// hash a compressed publicKey
+let hashCPK (cpk:cpk): hash `cost` 218 =
+    ret Sha3.empty
+    >>= updateCPK cpk
+    >>= Sha3.finalize
+
+
+
+(*
+-------------------------------------------------------------------------------
 ========== DATA PARSING =======================================================
 -------------------------------------------------------------------------------
 *)
+
+val parseDict: option data -> result (option (Dict.t data)) `cost` 4
+let parseDict data =
+    match data with
+    | Some data ->
+        tryDict data
+        |> RT.ofOptionT "Data parsing failed - the message body isn't a dictionary"
+        |> RT.map Some
+    | None ->
+        RT.failw "Data parsing failed - the message body is empty"
+        |> inc 4
 
 val parseField (#a:Type) (#m:nat)
     : (data -> option a `cost` m)
@@ -93,6 +140,20 @@ let parseTicker fieldName errMsg dict =
         if FStar.String.length s <= 4
             then let s : ticker = s in RT.ok s
             else RT.autoFailw "Ticker size can't be bigger than 4")
+
+val extractHash: string -> ls:list data -> list (option hash) `cost` (length ls * 4 + 2)
+let extractHash errMsg ls =
+    Zen.List.mapT tryHash ls
+
+//type auditPath = p: list hash{length p <= 31}
+val parseAuditPathAux: string -> string -> option (Dict.t data) -> result preAuditPath `cost` 68
+let parseAuditPathAux fieldName errMsg dict =
+    let open Zen.ResultT in
+    parseField tryList fieldName errMsg dict
+    >>= (fun ls ->
+        if length ls <= 31
+            then let ls : preAuditPath = ls in RT.ok ls
+            else RT.autoFailw "AuditPath size can't be bigger than 31")
 
 let getTimestamp    = parseField    tryU64       "Timestamp"    "Could not parse Timestamp"
 let getCommit       = parseField    tryHash      "Commit"       "Could not parse Commit"
@@ -141,23 +202,6 @@ let parseEvent dict =
 -------------------------------------------------------------------------------
 *)
 
-let runOpt (#a #s:Type) (#m:nat) (update:a -> s -> s `cost` m) (x:option a) (st:s): s `cost` m =
-    Zen.Option.maybe (incRet m) update x st
-
-// compress a public key
-let compress (pk:publicKey): cpk `cost` 132 =
-    let open FStar.UInt8 in // 13
-    let parity = (Zen.Array.item 32 pk %^ 2uy) +^ 2uy in
-    let aux (i:nat{i < 32}): byte `cost` 0 =
-        ret (Zen.Array.item (31-i) pk) in
-    let! x = Zen.Array.init_pure 32 aux in // 292
-    ret (parity, x)
-
-let updateCPK ((parity, h):cpk) (s:Sha3.t): Sha3.t `cost` 198 =
-    ret s
-    >>= Sha3.updateByte parity
-    >>= Sha3.updateHash h
-
 let updatePublicKey (pk:publicKey) (s:Sha3.t): Sha3.t `cost` 330 =
     let! cpk = compress pk in
     ret s
@@ -199,3 +243,76 @@ let hashBet (bet:bet): hash `cost` 590 =
     >>= updateEvent    bet.event
     >>= updatePosition bet.position
     >>= Sha3.finalize
+
+let betToken ((v,h):contractId) (bet:bet): asset `cost` 590 =
+    let! betHash = hashBet bet in
+    ret (v,h,betHash)
+
+
+
+(*
+-------------------------------------------------------------------------------
+========== COMMANDS ===========================================================
+-------------------------------------------------------------------------------
+*)
+
+val lockToPubKey: asset -> U64.t -> publicKey -> txSkeleton -> txSkeleton `cost` 414
+let lockToPubKey asset amount pk tx =
+    let! cpk = compress pk in // 132
+    let! cpkHash = hashCPK cpk in // 218
+    TX.lockToPubKey asset amount cpkHash tx // 64
+
+val lockToSender: asset -> U64.t -> sender -> txSkeleton -> txSkeleton `cost` 414
+let lockToSender asset amount sender tx =
+    match sender with
+    | PK pk ->
+        lockToPubKey asset amount pk tx
+    | Contract cid ->
+        TX.lockToContract asset amount cid tx |> inc 350
+    | Anonymous ->
+        incRet 414 tx
+
+val buyEvent: txSkeleton -> contractId -> sender -> event -> CR.t `cost` 2203 //(590 + 590 + 64 + 64 + 64 + 414 + 414 + 3)
+let buyEvent txSkel contractId sender event =
+    let! bullToken = betToken contractId ({event=event; position=Bull}) in // 590
+    let! bearToken = betToken contractId ({event=event; position=Bear}) in // 590
+    let! m = TX.getAvailableTokens Asset.zenAsset txSkel in // 64
+    ret txSkel
+    >>= TX.mint m bullToken // 64
+    >>= TX.mint m bearToken // 64
+    >>= lockToSender bullToken m sender // 414
+    >>= lockToSender bearToken m sender // 414
+    >>= CR.ofTxSkel //3
+
+val buy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 2603 //(4 + 396 + 2203)
+let buy txSkel contractId sender messageBody =
+    let open RT in
+    parseDict messageBody  // 4
+    >>= parseEvent // 396
+    >>= buyEvent txSkel contractId sender // 2203
+
+
+
+(*
+-------------------------------------------------------------------------------
+========== MAIN ===============================================================
+-------------------------------------------------------------------------------
+*)
+
+val main:
+       txSkel      : txSkeleton
+    -> context     : context
+    -> contractId  : contractId
+    -> command     : string
+    -> sender      : sender
+    -> messageBody : option data
+    -> wallet      : wallet
+    -> state       : option data
+    -> CR.t `cost` 2603
+let main txSkel context contractId command sender messageBody wallet state =
+    match command with
+    | "Buy" ->
+        buy txSkel contractId sender messageBody
+    | _ ->
+        RT.failw "Unsupported command"
+        |> inc 2603
