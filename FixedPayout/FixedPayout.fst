@@ -12,15 +12,38 @@ module Sha3  = Zen.Hash.Sha3
 module TX    = Zen.TxSkeleton
 module CR    = Zen.ContractResult
 module Asset = Zen.Asset
+module Opt   = Zen.Option
+
+let _cwt = ""
+let _defaultHash = Zen.Hash.Sha3.empty |> Zen.Hash.Sha3.finalize
+
+// tries to map a function over a list.
+// if all of the mappings return Some, then returns Some list.
+// otherwise returns None.
+val tryMap(#a #b: Type)(#n: nat):
+  (a -> option b `cost` n)
+  -> ls:list a
+  -> option (ls':list b{length ls' == length ls}) `cost` (length ls * n)
+let rec tryMap #a #b #n f ls = //20
+    match ls with
+    | hd::tl ->
+        let! hd' = f hd in
+        let! tl' = tryMap f tl in
+        begin match hd', tl' with
+        | Some hd', Some tl' ->
+            let (result: list b{length result == length ls}) = hd'::tl' in
+            Zen.OptionT.some result
+        | _ -> Zen.OptionT.none end
+    | [] -> [] |> Zen.OptionT.incSome (length ls * n)
 
 type ticker = s:string {FStar.String.length s <= 4}
 
 // compressed public key
 type cpk = byte ** hash
 
-type preAuditPath = p: list data{length p <= 31}
+type preAuditPath = p: list data{length p == 256}
 
-type auditPath = p: list hash{length p <= 31}
+type auditPath = p: list hash{length p == 256}
 
 type attestation = {
     timestamp : timestamp;
@@ -68,7 +91,7 @@ type redemption = {
 *)
 
 let runOpt (#a #s:Type) (#m:nat) (update:a -> s -> s `cost` m) (x:option a) (st:s): s `cost` m =
-    Zen.Option.maybe (incRet m) update x st
+    Opt.maybe (incRet m) update x st
 
 // compress a public key
 let compress (pk:publicKey): cpk `cost` 132 =
@@ -89,6 +112,22 @@ let hashCPK (cpk:cpk): hash `cost` 218 =
     ret Sha3.empty
     >>= updateCPK cpk
     >>= Sha3.finalize
+
+val lockToPubKey: asset -> U64.t -> publicKey -> txSkeleton -> txSkeleton `cost` 414
+let lockToPubKey asset amount pk tx =
+    let! cpk = compress pk in // 132
+    let! cpkHash = hashCPK cpk in // 218
+    TX.lockToPubKey asset amount cpkHash tx // 64
+
+val lockToSender: asset -> U64.t -> sender -> txSkeleton -> txSkeleton `cost` 414
+let lockToSender asset amount sender tx =
+    match sender with
+    | PK pk ->
+        lockToPubKey asset amount pk tx
+    | Contract cid ->
+        TX.lockToContract asset amount cid tx |> inc 350
+    | Anonymous ->
+        tx |> incRet 414
 
 
 
@@ -141,19 +180,31 @@ let parseTicker fieldName errMsg dict =
             then let s : ticker = s in RT.ok s
             else RT.autoFailw "Ticker size can't be bigger than 4")
 
-val extractHash: string -> ls:list data -> list (option hash) `cost` (length ls * 4 + 2)
-let extractHash errMsg ls =
-    Zen.List.mapT tryHash ls
+val extractHashes: string -> ls:list data -> result (ls':list hash {length ls' == length ls}) `cost` (length ls * 2)
+let extractHashes errMsg ls =
+    tryMap tryHash ls
+    |> RT.ofOptionT errMsg
 
-//type auditPath = p: list hash{length p <= 31}
-val parseAuditPathAux: string -> string -> option (Dict.t data) -> result preAuditPath `cost` 68
-let parseAuditPathAux fieldName errMsg dict =
+val extractAuditPath: preAuditPath -> result auditPath `cost` 512
+let extractAuditPath ls =
+    let open RT in
+    extractHashes "All the items in the audit path must be hashes" ls
+    $> (fun xs -> let (xs:list hash {length xs == 256}) = xs in xs)
+
+val parsePreAuditPath: string -> string -> option (Dict.t data) -> result preAuditPath `cost` 68
+let parsePreAuditPath fieldName errMsg dict =
     let open Zen.ResultT in
     parseField tryList fieldName errMsg dict
     >>= (fun ls ->
-        if length ls <= 31
+        if length ls = 256
             then let ls : preAuditPath = ls in RT.ok ls
-            else RT.autoFailw "AuditPath size can't be bigger than 31")
+            else RT.autoFailw "AuditPath length must be 256")
+
+val parseAuditPath: string -> string -> option (Dict.t data) -> result auditPath `cost` 580
+let parseAuditPath fieldName errMsg dict =
+    let open Zen.ResultT in
+    parsePreAuditPath fieldName errMsg dict
+    >>= extractAuditPath
 
 let getTimestamp    = parseField    tryU64       "Timestamp"    "Could not parse Timestamp"
 let getCommit       = parseField    tryHash      "Commit"       "Could not parse Commit"
@@ -231,12 +282,18 @@ let updatePosition (position:position) (s:Sha3.t): Sha3.t `cost` 24 =
     | Bear -> "Bear"
     end
 
-let hashAttestation (attestation:attestation): hash `cost` 590 =
+let hashCommitment (attestation:attestation): hash `cost` 590 =
     ret Sha3.empty
     >>= Sha3.updateHash attestation.commit
     >>= Sha3.updateU64  attestation.timestamp
     >>= updatePublicKey attestation.pubKey
     >>= Sha3.finalize
+
+let hashAttestation (attestation:attestation): hash `cost` 802 =
+    let! commit = hashCommitment attestation in // 590
+    ret Sha3.empty
+    >>= Sha3.updateHash commit // 192
+    >>= Sha3.finalize // 20
 
 let hashBet (bet:bet): hash `cost` 590 =
     ret Sha3.empty
@@ -244,33 +301,65 @@ let hashBet (bet:bet): hash `cost` 590 =
     >>= updatePosition bet.position
     >>= Sha3.finalize
 
-let betToken ((v,h):contractId) (bet:bet): asset `cost` 590 =
+let betToken ((v, h):contractId) (bet:bet): asset `cost` 590 =
     let! betHash = hashBet bet in
-    ret (v,h,betHash)
+    ret (v, h, betHash)
+
+let attestToken ((v,h):contractId) (attestation:attestation): asset `cost` 802 =
+    let! attestHash = hashAttestation attestation in
+    ret (v, h, attestHash)
 
 
 
 (*
 -------------------------------------------------------------------------------
-========== COMMANDS ===========================================================
+========== AUDIT PATH VALIDATION ==============================================
 -------------------------------------------------------------------------------
 *)
 
-val lockToPubKey: asset -> U64.t -> publicKey -> txSkeleton -> txSkeleton `cost` 414
-let lockToPubKey asset amount pk tx =
-    let! cpk = compress pk in // 132
-    let! cpkHash = hashCPK cpk in // 218
-    TX.lockToPubKey asset amount cpkHash tx // 64
 
-val lockToSender: asset -> U64.t -> sender -> txSkeleton -> txSkeleton `cost` 414
-let lockToSender asset amount sender tx =
-    match sender with
-    | PK pk ->
-        lockToPubKey asset amount pk tx
-    | Contract cid ->
-        TX.lockToContract asset amount cid tx |> inc 350
-    | Anonymous ->
-        incRet 414 tx
+val hashKey : ticker -> hash `cost` 44
+let hashKey s =
+    Sha3.ofString s
+    |> inc (24 - (6 * FStar.String.length s))
+
+val verifyAuditPath : proof -> bool `cost` 107588
+let verifyAuditPath proof =
+    let! defaultHash = _defaultHash in
+    let! key = hashKey proof.key in
+    let value = Zen.SparseMerkleTree.serializeU64 proof.value in
+    Zen.SparseMerkleTree.verify _cwt defaultHash proof.root proof.auditPath key (Some value)
+
+
+(*)
+type proof = {
+    key       : ticker;
+    value     : U64.t;
+    root      : hash;
+    auditPath : auditPath;
+}
+
+val serializeU64:
+    value: FStar.UInt64.t
+    -> hash
+
+-val verify:
+    cwt: string
+    -> defaultHash: hash
+    -> root: hash
+    -> auditPath: list hash
+    -> key: hash
+    -> value: option hash
+    -> bool `cost` (length auditPath * 420 + 4)
+
+
+
+(*)
+(*
+-------------------------------------------------------------------------------
+========== COMMAND: Buy  ======================================================
+-------------------------------------------------------------------------------
+*)
 
 val buyEvent: txSkeleton -> contractId -> sender -> event -> CR.t `cost` 2203 //(590 + 590 + 64 + 64 + 64 + 414 + 414 + 3)
 let buyEvent txSkel contractId sender event =
@@ -290,6 +379,20 @@ let buy txSkel contractId sender messageBody =
     parseDict messageBody  // 4
     >>= parseEvent // 396
     >>= buyEvent txSkel contractId sender // 2203
+
+
+
+(*
+-------------------------------------------------------------------------------
+========== COMMAND: Redeem ====================================================
+-------------------------------------------------------------------------------
+*)
+
+val inBounds : U64.t -> option U64.t -> U64.t -> bool `cost` 0
+let inBounds low high value =
+    (low `U64.lte` value && Opt.maybe true (U64.lte value) high)
+    |> ret
+
 
 
 
