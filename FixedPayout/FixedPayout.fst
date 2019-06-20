@@ -5,6 +5,7 @@ open Zen.Cost
 open Zen.Types
 open Zen.Data
 
+module U8    = FStar.UInt8
 module U64   = FStar.UInt64
 module RT    = Zen.ResultT
 module Dict  = Zen.Dictionary
@@ -13,8 +14,13 @@ module TX    = Zen.TxSkeleton
 module CR    = Zen.ContractResult
 module Asset = Zen.Asset
 module Opt   = Zen.Option
+module OptT  = Zen.OptionT
+module Array = Zen.Array
+module Str   = FStar.String
+module CId   = Zen.ContractId
+module SMT   = Zen.SparseMerkleTree
 
-type ticker = s:string {FStar.String.length s <= 4}
+type ticker = s:string {Str.length s <= 4}
 
 // compressed public key
 type cpk = byte ** hash
@@ -86,20 +92,21 @@ let rec tryMap #a #b #n f ls = //20
         begin match hd', tl' with
         | Some hd', Some tl' ->
             let (result: list b{length result == length ls}) = hd'::tl' in
-            Zen.OptionT.some result
-        | _ -> Zen.OptionT.none end
-    | [] -> [] |> Zen.OptionT.incSome (length ls * n)
+            OptT.some result
+        | _ -> OptT.none
+        end
+    | [] -> [] |> OptT.incSome (length ls * n)
 
 let runOpt (#a #s:Type) (#m:nat) (update:a -> s -> s `cost` m) (x:option a) (st:s): s `cost` m =
     Opt.maybe (incRet m) update x st
 
 // compress a public key
 let compress (pk:publicKey): cpk `cost` 132 =
-    let open FStar.UInt8 in // 13
-    let parity = (Zen.Array.item 32 pk %^ 2uy) +^ 2uy in
+    let open U8 in
+    let parity = (Array.item 32 pk %^ 2uy) +^ 2uy in
     let aux (i:nat{i < 32}): byte `cost` 0 =
-        ret (Zen.Array.item (31-i) pk) in
-    let! x = Zen.Array.init_pure 32 aux in // 292
+        ret (Array.item (31-i) pk) in
+    let! x = Array.init_pure 32 aux in
     ret (parity, x)
 
 let updateCPK ((parity, h):cpk) (s:Sha3.t): Sha3.t `cost` 198 =
@@ -115,19 +122,20 @@ let hashCPK (cpk:cpk): hash `cost` 218 =
 
 val lockToPubKey: asset -> U64.t -> publicKey -> txSkeleton -> txSkeleton `cost` 414
 let lockToPubKey asset amount pk tx =
-    let! cpk = compress pk in // 132
-    let! cpkHash = hashCPK cpk in // 218
-    TX.lockToPubKey asset amount cpkHash tx // 64
+    let! cpk = compress pk in
+    let! cpkHash = hashCPK cpk in
+    TX.lockToPubKey asset amount cpkHash tx
 
 val lockToSender: asset -> U64.t -> sender -> txSkeleton -> txSkeleton `cost` 414
-let lockToSender asset amount sender tx =
+let lockToSender asset amount sender =
     match sender with
     | PK pk ->
-        lockToPubKey asset amount pk tx
+        lockToPubKey asset amount pk
     | Contract cid ->
-        TX.lockToContract asset amount cid tx |> inc 350
+        TX.lockToContract asset amount cid
+        >> inc 350
     | Anonymous ->
-        tx |> incRet 414
+        incRet 414
 
 
 
@@ -141,12 +149,12 @@ val parseDict: option data -> result (option (Dict.t data)) `cost` 4
 let parseDict data =
     match data with
     | Some data ->
-        tryDict data
+        data
+        |> tryDict
         |> RT.ofOptionT "Data parsing failed - the message body isn't a dictionary"
         |> RT.map Some
     | None ->
-        "Data parsing failed - the message body is empty"
-        |> RT.incFailw 4
+        RT.incFailw 4 "Data parsing failed - the message body is empty"
 
 val parseField (#a:Type) (#m:nat)
     : (data -> option a `cost` m)
@@ -158,11 +166,9 @@ let parseField #_ #_ parser fieldName errMsg dict =
     let! value = dict >!= Dict.tryFind fieldName >?= parser in
     match value with
     | Some value ->
-        value
-        |> RT.ok
+        RT.ok value
     | None ->
-        errMsg
-        |> RT.failw
+        RT.failw errMsg
 
 val parseOptField (#a:Type) (#m:nat)
     : (data -> option a `cost` m)
@@ -170,17 +176,20 @@ val parseOptField (#a:Type) (#m:nat)
     -> option (Dict.t data)
     -> result (option a) `cost` (m + 64)
 let parseOptField #_ #_ parser fieldName dict =
-    let! value = dict >!= Dict.tryFind fieldName >?= parser in
-    RT.ok value
+    dict
+    >!= Dict.tryFind fieldName
+    >?= parser
+    >>= RT.ok
 
 val parseTicker: string -> string -> option (Dict.t data) -> result ticker `cost` 66
 let parseTicker fieldName errMsg dict =
-    let open Zen.ResultT in
-    parseField tryString fieldName errMsg dict
-    >>= (fun s ->
-        if FStar.String.length s <= 4
-            then let s : ticker = s in RT.ok s
-            else RT.failw "Ticker size can't be bigger than 4")
+    let open RT in
+    parseField tryString fieldName errMsg dict >>=
+    begin fun s ->
+        if Str.length s <= 4
+            then RT.ok (s <: ticker)
+            else RT.failw "Ticker size can't be bigger than 4"
+    end
 
 val extractHashes: string -> ls:list data -> result (ls':list hash {length ls' == length ls}) `cost` (length ls * 2)
 let extractHashes errMsg ls =
@@ -195,44 +204,44 @@ let extractAuditPath ls =
 
 val parsePreAuditPath: string -> string -> option (Dict.t data) -> result preAuditPath `cost` 68
 let parsePreAuditPath fieldName errMsg dict =
-    let open Zen.ResultT in
-    parseField tryList fieldName errMsg dict
-    >>= (fun ls ->
+    let open RT in
+    parseField tryList fieldName errMsg dict >>=
+    begin fun ls ->
         if length ls = 256
-            then let ls : preAuditPath = ls in RT.ok ls
-            else RT.failw "AuditPath length must be 256")
+            then RT.ok (ls <: preAuditPath)
+            else RT.failw "AuditPath length must be 256"
+    end
 
 val parseAuditPath: string -> string -> option (Dict.t data) -> result auditPath `cost` 580
-let parseAuditPath fieldName errMsg dict =
-    let open Zen.ResultT in
-    parsePreAuditPath fieldName errMsg dict
-    >>= extractAuditPath
+let parseAuditPath fieldName errMsg =
+    let open RT in
+    parsePreAuditPath fieldName errMsg
+    >=> extractAuditPath
 
 val parsePosition: string -> string -> option (Dict.t data) -> result position `cost` 66
 let parsePosition fieldName errMsg dict =
-    let open Zen.ResultT in
+    let open RT in
     parseField tryString fieldName errMsg dict >>=
-    (function
+    begin function
     | "Bull" -> ret Bull
     | "Bear" -> ret Bear
-    | _      -> RT.failw "Position must be either Bull or Bear")
+    | _      -> RT.failw "Position must be either Bull or Bear"
+    end
 
 val parseContractId: string -> string -> option (Dict.t data) -> result contractId `cost` 130
 let parseContractId fieldName errMsg dict =
-    let open Zen.ResultT in
+    let open RT in
     parseField tryString fieldName errMsg dict >>=
-    (fun s ->
-        begin
-        if FStar.String.length s = 72
+    begin fun s ->
+        if Str.length s = 72
             then
-                begin
-                let (s:string { FStar.String.length s = 72 }) = s in
+                let (s:string { Str.length s = 72 }) = s in
                 s
-                |> Zen.ContractId.parse
-                |> Zen.ResultT.ofOptionT "OracleContractId is not a valid contractId" // 64
-                end
-            else "OracleContractId must be 72 characters long" |> RT.incFailw 64
-        end)
+                |> CId.parse
+                |> RT.ofOptionT "The given OracleContractId is not a valid contractId"
+            else
+                RT.incFailw 64 "OracleContractId must be 72 characters long"
+    end
 
 let getTimestamp        = parseField      tryU64       "Timestamp"        "Could not parse Timestamp"
 let getCommit           = parseField      tryHash      "Commit"           "Could not parse Commit"
@@ -251,7 +260,7 @@ let getOracleContractId = parseContractId              "OracleContractId" "Could
 
 val parseProof: option (Dict.t data) -> result proof `cost` 910
 let parseProof dict =
-    let open Zen.ResultT in
+    let open RT in
     dict |> getTicker      >>= (fun key         ->
     dict |> getValue       >>= (fun value       ->
     dict |> getCommit      >>= (fun root        ->
@@ -269,7 +278,7 @@ let parseProof dict =
 
 val parseAttestation: option (Dict.t data) -> result attestation `cost` 198
 let parseAttestation dict =
-    let open Zen.ResultT in
+    let open RT in
     dict |> getTimestamp    >>= (fun timestamp ->
     dict |> getCommit       >>= (fun commit    ->
     dict |> getOraclePubKey >>= (fun pubKey    ->
@@ -281,7 +290,7 @@ let parseAttestation dict =
 
 val parseEvent: option (Dict.t data) -> result event `cost` 526
 let parseEvent dict =
-    let open Zen.ResultT in
+    let open RT in
     dict |> getOraclePubKey     >>= (fun oraclePubKey     ->
     dict |> getOracleContractId >>= (fun oracleContractId ->
     dict |> getTicker           >>= (fun ticker           ->
@@ -301,7 +310,7 @@ let parseEvent dict =
 
 val parseRedemption: option (Dict.t data) -> result redemption `cost` 1700
 let parseRedemption dict =
-    let open Zen.ResultT in
+    let open RT in
     dict |> parseEvent       >>= (fun event       ->
     dict |> getPosition      >>= (fun position    ->
     dict |> parseAttestation >>= (fun attestation ->
@@ -332,12 +341,12 @@ let updatePublicKey (pk:publicKey) (s:Sha3.t): Sha3.t `cost` 330 =
 let updateTicker (tick:ticker) (s:Sha3.t): Sha3.t `cost` 24 =
     ret s
     >>= Sha3.updateString tick
-    >>= incRet (6 * (4 - FStar.String.length tick))
+    >>= incRet (6 * (4 - Str.length tick))
 
 let updateContractId ((v,h):contractId) (s:Sha3.t): Sha3.t `cost` 216 =
     ret s
-    >>= Sha3.updateU32 v  // 24
-    >>= Sha3.updateHash h // 192
+    >>= Sha3.updateU32 v
+    >>= Sha3.updateHash h
 
 let updateEvent (event:event) (s:Sha3.t): Sha3.t `cost` 762 =
     ret s
@@ -352,8 +361,7 @@ let updateEvent (event:event) (s:Sha3.t): Sha3.t `cost` 762 =
 let updatePosition (position:position) (s:Sha3.t): Sha3.t `cost` 24 =
     ret s
     >>= Sha3.updateString
-    begin
-    match position with
+    begin match position with
     | Bull -> "Bull"
     | Bear -> "Bear"
     end
@@ -366,10 +374,10 @@ let hashCommitment (attestation:attestation): hash `cost` 590 =
     >>= Sha3.finalize
 
 let hashAttestation (attestation:attestation): hash `cost` 802 =
-    let! commit = hashCommitment attestation in // 590
+    let! commit = hashCommitment attestation in
     ret Sha3.empty
-    >>= Sha3.updateHash commit // 192
-    >>= Sha3.finalize // 20
+    >>= Sha3.updateHash commit
+    >>= Sha3.finalize
 
 let hashBet (bet:bet): hash `cost` 806 =
     ret Sha3.empty
@@ -418,7 +426,7 @@ let validatePrice redemption =
     let! inb   = inBounds low high value in
     let  pos   = redemption.bet.position in
     match inb, pos with
-    | true, Bull
+    | true , Bull
     | false, Bear ->
         RT.ok redemption
     | _ ->
@@ -427,13 +435,13 @@ let validatePrice redemption =
 val hashKey : ticker -> hash `cost` 44
 let hashKey s =
     Sha3.ofString s
-    |> inc (24 - (6 * FStar.String.length s))
+    |> inc (24 - (6 * Str.length s))
 
 val verifyAuditPath : proof -> bool `cost` 107568
 let verifyAuditPath proof =
-    let! key = hashKey proof.key in
-    let value = Zen.SparseMerkleTree.serializeU64 proof.value in
-    Zen.SparseMerkleTree.verify proof.cwt proof.defaultHash proof.root proof.auditPath key (Some value)
+    let! key   = hashKey proof.key            in
+    let  value = SMT.serializeU64 proof.value in
+    SMT.verify proof.cwt proof.defaultHash proof.root proof.auditPath key (Some value)
 
 val validateAuditPath: redemption -> result redemption `cost` 107568
 let validateAuditPath redemption =
@@ -456,24 +464,25 @@ let validateRedemption =
 -------------------------------------------------------------------------------
 *)
 
-val buyEvent: txSkeleton -> contractId -> sender -> event -> CR.t `cost` 2635 //(806 + 806 + 64 + 64 + 64 + 414 + 414 + 3)
+val buyEvent: txSkeleton -> contractId -> sender -> event -> CR.t `cost` 2635
 let buyEvent txSkel contractId sender event =
-    let! bullToken = mkBetToken contractId ({event=event; position=Bull}) in // 806
-    let! bearToken = mkBetToken contractId ({event=event; position=Bear}) in // 806
-    let! m = TX.getAvailableTokens Asset.zenAsset txSkel in // 64
+    let! bullToken = mkBetToken contractId ({event=event; position=Bull}) in
+    let! bearToken = mkBetToken contractId ({event=event; position=Bear}) in
+    let! m         = TX.getAvailableTokens Asset.zenAsset txSkel          in
     ret txSkel
-    >>= TX.mint m bullToken // 64
-    >>= TX.mint m bearToken // 64
-    >>= lockToSender bullToken m sender // 414
-    >>= lockToSender bearToken m sender // 414
-    >>= CR.ofTxSkel //3
+    >>= TX.mint m bullToken
+    >>= TX.mint m bearToken
+    >>= lockToSender bullToken m sender
+    >>= lockToSender bearToken m sender
+    >>= CR.ofTxSkel
 
-val buy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 3165 //(4 + 526 + 2635)
-let buy txSkel contractId sender messageBody =
+val buy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 3165
+let buy txSkel contractId sender =
     let open RT in
-    parseDict messageBody  // 4
-    >>= parseEvent // 526
-    >>= buyEvent txSkel contractId sender // 2635
+    ret
+    >=> parseDict
+    >=> parseEvent
+    >=> buyEvent txSkel contractId sender
 
 
 
@@ -483,24 +492,27 @@ let buy txSkel contractId sender messageBody =
 -------------------------------------------------------------------------------
 *)
 
-val redeemRedemption: txSkeleton -> contractId -> sender -> redemption -> CR.t `cost` 2217 //(806 + 802 + 64 + 64 + 64 + 414 + 3)
+val redeemRedemption: txSkeleton -> contractId -> sender -> redemption -> CR.t `cost` 2217
 let redeemRedemption txSkel contractId sender redemption =
-    let! betToken = mkBetToken contractId redemption.bet in // 806
-    let! attestToken = mkAttestToken redemption.bet.event.oracleContractId redemption.attestation in // 802
-    let! m = TX.getAvailableTokens betToken txSkel in // 64
+    let! betToken         = mkBetToken contractId redemption.bet       in
+    let  oracleContractId = redemption.bet.event.oracleContractId      in
+    let  attestation      = redemption.attestation                     in
+    let! attestToken      = mkAttestToken oracleContractId attestation in
+    let! m                = TX.getAvailableTokens betToken txSkel      in
     ret txSkel
-    >>= TX.destroy m betToken // 64
-    >>= TX.destroy 1UL attestToken // 64
-    >>= lockToSender Asset.zenAsset m sender // 414
-    >>= CR.ofTxSkel //3
+    >>= TX.destroy m betToken
+    >>= TX.destroy 1UL attestToken
+    >>= lockToSender Asset.zenAsset m sender
+    >>= CR.ofTxSkel
 
-val redeem: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 111489 // (4 + 1700 + 107568 + 2217)
-let redeem txSkel contractId sender messageBody =
+val redeem: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 111489
+let redeem txSkel contractId sender =
     let open RT in
-    parseDict messageBody // 4
-    >>= parseRedemption // 1700
-    >>= validateRedemption // 107568
-    >>= redeemRedemption txSkel contractId sender // 2217
+    ret
+    >=> parseDict
+    >=> parseRedemption
+    >=> validateRedemption
+    >=> redeemRedemption txSkel contractId sender
 
 (*
 -------------------------------------------------------------------------------
