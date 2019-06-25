@@ -49,7 +49,7 @@ type position =
     | Bull
     | Bear
 
-type event = {
+type betEvent = {
     oraclePubKey     : publicKey;
     oracleContractId : contractId;
     ticker           : ticker;
@@ -60,7 +60,7 @@ type event = {
 }
 
 type bet = {
-    event    : event;
+    bevent   : betEvent;
     position : position;
 }
 
@@ -332,7 +332,7 @@ let parseAttestation dict = // 16
             pubKey    = pubKey;
         }))))
 
-val parseEvent: option (Dict.t data) -> result event `cost` 692
+val parseEvent: option (Dict.t data) -> result betEvent `cost` 692
 let parseEvent dict = // 36
     let open RT in
     dict |> getOraclePubKey     >>= (fun oraclePubKey     -> // 82
@@ -355,13 +355,13 @@ let parseEvent dict = // 36
 val parseRedemption: option (Dict.t data) -> result redemption `cost` 7284
 let parseRedemption dict = // 22
     let open RT in
-    dict |> parseEvent       >>= (fun event       -> // 692
+    dict |> parseEvent       >>= (fun bevent      -> // 692
     dict |> getPosition      >>= (fun position    -> // 91
     dict |> parseAttestation >>= (fun attestation -> // 262
     dict |> parseProof       >>= (fun proof       -> // 6217
         RT.ok ({
             bet         = {
-                event    = event;
+                bevent   = bevent;
                 position = position;
             };
             attestation = attestation;
@@ -395,16 +395,16 @@ let updateContractId (v,h) s = // 7
     >>= Sha3.updateU32  v // 24
     >>= Sha3.updateHash h // 192
 
-val updateEvent : hashUpdate event 1009
-let updateEvent event s = // 31
+val updateEvent : hashUpdate betEvent 1009
+let updateEvent bevent s = // 31
     ret s
-    >>= updatePublicKey         event.oraclePubKey     // 517
-    >>= updateContractId        event.oracleContractId // 223
-    >>= updateTicker            event.ticker           // 36
-    >>= Sha3.updateU64          event.priceLow         // 48
-    >>= Sha3.updateU64 `runOpt` event.priceHigh        // 53
-    >>= Sha3.updateU64          event.timeLow          // 48
-    >>= Sha3.updateU64 `runOpt` event.timeHigh         // 53
+    >>= updatePublicKey         bevent.oraclePubKey     // 517
+    >>= updateContractId        bevent.oracleContractId // 223
+    >>= updateTicker            bevent.ticker           // 36
+    >>= Sha3.updateU64          bevent.priceLow         // 48
+    >>= Sha3.updateU64 `runOpt` bevent.priceHigh        // 53
+    >>= Sha3.updateU64          bevent.timeLow          // 48
+    >>= Sha3.updateU64 `runOpt` bevent.timeHigh         // 53
 
 val updatePosition : hashUpdate position 30
 let updatePosition position s = // 6
@@ -433,7 +433,7 @@ let hashAttestation attestation = // 9
 val hashBet : bet -> hash `cost` 1070
 let hashBet bet = // 11
     ret Sha3.empty
-    >>= updateEvent    bet.event    // 1009
+    >>= updateEvent    bet.bevent    // 1009
     >>= updatePosition bet.position // 30
     >>= Sha3.finalize               // 20
 
@@ -462,23 +462,23 @@ let inBounds low high value =
 
 val validateTime: redemption -> result redemption `cost` 25
 let validateTime redemption = // 15
-    let  event = redemption.bet.event             in
-    let  low   = event.timeLow                    in
-    let  high  = event.timeHigh                   in
-    let  value = redemption.attestation.timestamp in
-    let! inb   = inBounds low high value          in // 10
+    let  bevent = redemption.bet.bevent            in
+    let  low    = bevent.timeLow                   in
+    let  high   = bevent.timeHigh                  in
+    let  value  = redemption.attestation.timestamp in
+    let! inb    = inBounds low high value          in // 10
     if inb
         then RT.ok redemption
         else RT.failw "Attestation time is not within the given time bounds"
 
 val validatePrice: redemption -> result redemption `cost` 31
 let validatePrice redemption = // 21
-    let  event = redemption.bet.event    in
-    let  low   = event.priceLow          in
-    let  high  = event.priceHigh         in
-    let  value = redemption.proof.value  in
-    let! inb   = inBounds low high value in // 10
-    let  pos   = redemption.bet.position in
+    let  bevent = redemption.bet.bevent   in
+    let  low    = bevent.priceLow         in
+    let  high   = bevent.priceHigh        in
+    let  value  = redemption.proof.value  in
+    let! inb    = inBounds low high value in // 10
+    let  pos    = redemption.bet.position in
     match inb, pos with
     | true , Bull
     | false, Bear ->
@@ -520,10 +520,10 @@ let validateRedemption redemption = // 7
 -------------------------------------------------------------------------------
 *)
 
-val buyEvent: txSkeleton -> contractId -> sender -> event -> CR.t `cost` 3632
-let buyEvent txSkel contractId sender event = // 37
-    let! bullToken = mkBetToken contractId ({ event=event; position=Bull }) in // 1077
-    let! bearToken = mkBetToken contractId ({ event=event; position=Bear }) in // 1077
+val buyEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 3632
+let buyEvent txSkel contractId sender bevent = // 37
+    let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1077
+    let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1077
     let! m         = TX.getAvailableTokens Asset.zenAsset txSkel            in // 64
     ret txSkel
     >>= TX.mint m bullToken             // 64
@@ -551,7 +551,7 @@ let buy txSkel contractId sender dict = // 10
 val redeemRedemption: txSkeleton -> contractId -> sender -> redemption -> CR.t `cost` 2948
 let redeemRedemption txSkel contractId sender redemption = // 33
     let! betToken         = mkBetToken contractId redemption.bet       in // 1077
-    let  oracleContractId = redemption.bet.event.oracleContractId      in
+    let  oracleContractId = redemption.bet.bevent.oracleContractId      in
     let  attestation      = redemption.attestation                     in
     let! attestToken      = mkAttestToken oracleContractId attestation in // 1020
     let! m                = TX.getAvailableTokens betToken txSkel      in // 64
