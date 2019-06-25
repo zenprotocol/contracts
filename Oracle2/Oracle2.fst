@@ -53,7 +53,7 @@ let compress (pk:publicKey): cpk `cost` 305 = let open FStar.UInt8 in // 13
     ret (parity, x)
 
 let updateCPK ((parity, h):cpk) (s:Sha3.t): Sha3.t `cost` 203 = // 5
-    Sha3.updateByte parity Sha3.empty
+    Sha3.updateByte parity s
     >>= Sha3.updateHash h
 
 // hash a compressed publicKey
