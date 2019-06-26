@@ -2,6 +2,7 @@ module FString    = FStar.String
 module Hash       = Consensus.Hash
 module ZFStar     = Consensus.ZFStar
 module Crypto     = Consensus.Crypto
+module Types      = Consensus.Types
 module Data       = Zen.Types.Data
 module Extracted  = Zen.Types.Extracted
 module Sha3       = Zen.Hash.Sha3
@@ -30,6 +31,23 @@ type fpcPK =
     | PK_Oracle
     | PK_Other
 
+type fpcData = {
+    _Timestamp        : uint64            option;
+    _Commit           : Types.Hash        option;
+    _OraclePubKey     : fpcPK             option;
+    _Ticker           : string            option;
+    _PriceLow         : uint64            option;
+    _PriceHigh        : uint64            option;
+    _TimeLow          : uint64            option;
+    _TimeHigh         : uint64            option;
+    _AuditPath        : (Types.Hash list) option;
+    _Value            : uint64            option;
+    _CWT              : string            option;
+    _DefaultHash      : Types.Hash        option;
+    _Position         : string            option;
+    _OracleContractId : fpcCid            option;
+}
+
 type attestation = {
     timestamp  : uint64;
     commit     : Types.Hash;
@@ -37,24 +55,27 @@ type attestation = {
 }
 
 type betEvent = {
-    oraclePubKey     : fpcPK  option;
-    oracleContractId : fpcCid option;
-    ticker           : string option;
-    priceLow         : uint64 option;
+    oraclePubKey     : fpcPK;
+    oracleContractId : fpcCid;
+    ticker           : string;
+    priceLow         : uint64;
     priceHigh        : uint64 option;
-    timeLow          : uint64 option;
+    timeLow          : uint64;
     timeHigh         : uint64 option;
 }
 
-type fpcAsset =
+type betToken =
     | BullToken of betEvent
     | BearToken of betEvent
+
+type fpcAsset =
+    | BetToken of betToken
     | AttestToken of attestation
     | OtherToken
 
 let CONTRACT_ID_FP     = Load.computeContractId "output/FixedPayout.fst"
 let CONTRACT_ID_ORACLE = Load.computeContractId "../Oracle2/output/Oracle2.fst"
-let CONTRACT_ID_OTHER = Load.computeContractId "../Dex001/Dex001.fst"
+let CONTRACT_ID_OTHER  = Load.computeContractId "../Dex001/Dex001.fst"
 
 let generatePublicKey() =
     Crypto.KeyPair.create() |> snd
@@ -64,7 +85,7 @@ let PK_REDEEMER = generatePublicKey()
 let PK_ORACLE   = generatePublicKey()
 let PK_OTHER    = generatePublicKey()
 
-
+let fpcMain, fpcCost = Load.extractMainAndCost "output/FixedPayout.dll"
 
 (*
 ------------------------------------------------------------------------------------------------------------------------
@@ -87,51 +108,6 @@ let FIELD_DEFAULT_HASH       = "DefaultHash"B
 let FIELD_POSITION           = "Position"B
 let FIELD_ORACLE_CONTRACT_ID = "OracleContractId"B
 
-(*
-let SerializedPublicKeyLength = 33
-
-let private context = Crypto.Native.secp256k1_context_create (Crypto.Native.SECP256K1_CONTEXT_SIGN ||| Crypto.Native.SECP256K1_CONTEXT_VERIFY)
-
-let serialize (Crypto.PublicKey publicKey) =
-    let bytes = Array.create SerializedPublicKeyLength 0uy
-    let mutable length = int64 SerializedPublicKeyLength
-
-    match Crypto.Native.secp256k1_ec_pubkey_serialize(context, bytes, &&length, publicKey, Crypto.Native.SECP256K1_EC_COMPRESSED) with
-    | Crypto.Native.Result.Ok ->
-        if 33L = length then bytes else failwith "Wrong serialized size"
-    | _ -> failwith "failed to serialize public key"
-
-let pk2hash (pk : Extracted.publicKey) : Hash.Hash =
-    serialize (Crypto.PublicKey pk) |> Hash.compute
-
-let addToDict (key, value) dict =
-    Zen.Dictionary.add key value dict
-    |> Zen.Cost.Realized.__force
-
-let addU64 (key : FString.t) (value : uint64) = addToDict (key, Data.U64 value)
-
-let addPK (key : FString.t) (value : Extracted.publicKey) = addToDict (key, Data.PublicKey value)
-
-let addString (key : FString.t) (value : string) = addToDict (key, value |> ZFStar.fsToFstString |> Data.String)
-
-let addPKLock (key : FString.t) (value : Extracted.publicKey) = addToDict (key, Extracted.PKLock (pk2hash value |> Hash.bytes) |> Data.Lock)
-
-let mkBetEvenDict (bevent : betEvent) =
-    Zen.Dictionary.empty
-    |> match bevent.oraclePubKey     with | None -> id | Some x -> addPK     FIELD_ORACLE_PUB_KEY     x
-    |> match bevent.oracleContractId with | None -> id | Some x -> addString FIELD_ORACLE_CONTRACT_ID x
-    |> match bevent.ticker           with | None -> id | Some x -> addString FIELD_TICKER             x
-    |> match bevent.priceLow         with | None -> id | Some x -> addU64    FIELD_PRICE_LOW          x
-    |> match bevent.priceHigh        with | None -> id | Some x -> addU64    FIELD_PRICE_HIGH         x
-    |> match bevent.timeLow          with | None -> id | Some x -> addU64    FIELD_TIME_LOW           x
-    |> match bevent.timeHigh         with | None -> id | Some x -> addU64    FIELD_TIME_HIGH          x
-
-let mkBetEventData =
-    mkBetEvenDict
-    >> Zen.Types.Data.Dict
-    >> Zen.Types.Data.Collection
-    >> Some
-*)
 
 
 (*
@@ -177,46 +153,64 @@ let compress pk =
 let updatePublicKey pk s =
     updateCPK (compress pk) s
 
-let updateContractId (v,h) s =
+let updateContractId (Consensus.Types.ContractId (v, Hash.Hash h)) s =
     s
     |> Sha3.updateU32  v |> Zen.Cost.Realized.__force
     |> Sha3.updateHash h |> Zen.Cost.Realized.__force
 
-let runOpt update x s =
-    match x with
-    | Some x ->
-        update x s
-    | None ->
-        s
-
-let require update ox s =
-    Option.map (fun x -> update x s) ox
+let runOpt update ox st =
+    match ox with
+    | Some x -> update x st |> Zen.Cost.Realized.__force
+    | None   -> st
 
 let updateEvent bevent s =
-    let (>>=) x f = Option.bind f x
-    Some s
-    >>= require updatePublicKey  (bevent.oraclePubKey     |> Option.map realizePK      )
-    // >>= require updateContractId (bevent.oracleContractId |> Option.map realizeContract)
-    // |> Sha3.updateString       bevent.ticker           |> Zen.Cost.Realized.__force
-    // |> Sha3.updateU64          bevent.priceLow         |> Zen.Cost.Realized.__force
-    // |> runOpt Sha3.updateU64   bevent.priceHigh        |> Zen.Cost.Realized.__force
-    // |> Sha3.updateU64          bevent.timeLow          |> Zen.Cost.Realized.__force
-    // |> runOpt Sha3.updateU64   bevent.timeHigh         |> Zen.Cost.Realized.__force
+    s
+    |> updatePublicKey      (bevent.oraclePubKey     |> realizePK           )
+    |> updateContractId     (bevent.oracleContractId |> realizeContract     )
+    |> Sha3.updateString    (bevent.ticker           |> ZFStar.fsToFstString) |> Zen.Cost.Realized.__force
+    |> Sha3.updateU64        bevent.priceLow                                  |> Zen.Cost.Realized.__force
+    |> runOpt Sha3.updateU64 bevent.priceHigh
+    |> Sha3.updateU64        bevent.timeLow                                   |> Zen.Cost.Realized.__force
+    |> runOpt Sha3.updateU64 bevent.timeHigh
+
+let updateString str s =
+    s
+    |> Sha3.updateString (ZFStar.fsToFstString str)
+    |> Zen.Cost.Realized.__force
+
+let hashBet btoken =
+    Sha3.empty |>
+    (match btoken with
+    | BullToken bevent -> updateEvent bevent >> updateString "Bull"
+    | BearToken bevent -> updateEvent bevent >> updateString "Bear"
+    )
+    |> Sha3.finalize
+    |> Zen.Cost.Realized.__force
+    |> Some
+
+let hashAttest attest =
+    Sha3.empty
+    |> Sha3.updateHash
+        (Sha3.empty
+        |> Sha3.updateHash (match attest.commit with | Hash.Hash h -> h) |> Zen.Cost.Realized.__force
+        |> Sha3.updateU64   attest.timestamp                             |> Zen.Cost.Realized.__force
+        |> updatePublicKey (attest.pubKey |> realizePK)
+        |> Sha3.finalize                                                 |> Zen.Cost.Realized.__force
+        )
+    |> Zen.Cost.Realized.__force
+    |> Sha3.finalize |> Zen.Cost.Realized.__force
 
 let realizeAsset asset : Option<Types.Asset> =
+    let (|@>) x f = Option.map f x
     match asset with
-    | BullToken bevent ->
-        //realizePK bevent.oraclePubKey
-        //|> updatePublicKey
-        failwith ""
-    | BearToken bevent ->
-        failwith ""
+    | BetToken btoken ->
+        hashBet btoken |@> (fun betHash -> Types.Asset (CONTRACT_ID_FP, Hash.Hash betHash))
     | AttestToken attest ->
-        failwith ""
+        match hashAttest attest with | attestHash -> Some (Types.Asset (CONTRACT_ID_ORACLE, Hash.Hash attestHash))
     | OtherToken ->
-        failwith ""
+        failwith "not implemented yet"
 
-let rec fpcRealizer : AbstractContract.Realizer<fpcPK, fpcCid, fpcAsset, fpcCommand, betEvent> =
+let rec fpcRealizer : AbstractContract.Realizer<fpcPK, fpcCid, fpcAsset, fpcCommand, fpcData> =
     {
         realizePK       = realizePK
         realizeContract = realizeContract
@@ -226,16 +220,60 @@ let rec fpcRealizer : AbstractContract.Realizer<fpcPK, fpcCid, fpcAsset, fpcComm
         thisContract    = CONTRACT_ID_FP
     }
 
-and realizeData (bevent : betEvent) =
+and realizeData (data : fpcData) =
     let rl = fpcRealizer in
     Input.MessageBody.emptyDict
-    |> AddRealized.add_pk       rl FIELD_ORACLE_PUB_KEY     bevent.oraclePubKey
-    |> AddRealized.add_contract rl FIELD_ORACLE_CONTRACT_ID bevent.oracleContractId
-    |> AddInput.add_string         FIELD_TICKER             bevent.ticker
-    |> AddInput.add_uint64         FIELD_PRICE_LOW          bevent.priceLow
-    |> AddInput.add_uint64         FIELD_PRICE_HIGH         bevent.priceHigh
-    |> AddInput.add_uint64         FIELD_TIME_LOW           bevent.timeLow
-    |> AddInput.add_uint64         FIELD_TIME_HIGH          bevent.timeHigh
+    |> AddInput.add_uint64         FIELD_PRICE_LOW          data._PriceLow
+    |> AddRealized.add_pk       rl FIELD_ORACLE_PUB_KEY     data._OraclePubKey
+    |> AddInput.add_string         FIELD_TICKER             data._Ticker
+    |> AddInput.add_uint64         FIELD_PRICE_LOW          data._PriceLow
+    |> AddInput.add_uint64         FIELD_PRICE_HIGH         data._PriceHigh
+    |> AddInput.add_uint64         FIELD_TIME_LOW           data._TimeLow
+    |> AddInput.add_uint64         FIELD_TIME_HIGH          data._TimeHigh
+    //|> add_hashlist                FIELD_AUDIT_PATH         data._AuditPath
+    |> AddInput.add_uint64         FIELD_VALUE              data._Value
+    |> AddInput.add_string         FIELD_CWT                data._CWT
+    |> AddInput.add_hash           FIELD_DEFAULT_HASH       data._DefaultHash
+    |> AddInput.add_string         FIELD_POSITION           data._Position
+    |> AddRealized.add_contract rl FIELD_ORACLE_CONTRACT_ID data._OracleContractId
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
+
+
+
+
+
+
+
+
+
+(*
+------------------------------------------------------------------------------------------------------------------------
+======================================== COMMAND: "Buy" ================================================================
+------------------------------------------------------------------------------------------------------------------------
+*)
+
+let emptyInvocation_test() =
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            "Buy"
+         sender      =
+            AbstractContract.AbsPKSender PK_Issuer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            None
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    }
+
+printfn "%A" (emptyInvocation_test())
