@@ -79,7 +79,34 @@ type redemption = {
     proof       : proof;
 }
 
+(*
 
+val main:
+       txSkel      : txSkeleton
+    -> context     : context
+    -> contractId  : contractId
+    -> command     : string
+    -> sender      : sender
+    -> messageBody : option data
+    -> wallet      : wallet
+    -> state       : option data
+    -> CR.t `cost` 4
+let main txSkel context contractId command sender messageBody wallet state = // 2
+    CR.ofTxSkel txSkel // 3
+
+val cf:
+       txSkel     : txSkeleton
+    -> context    : context
+    -> command    : string
+    -> sender     : sender
+    -> messageBody: option data
+    -> wallet     : wallet
+    -> state      : option data
+    -> nat `cost` 2
+let cf _ _ _ _ _ _ _ =
+    (4 <: nat) |> ret
+
+*)
 
 (*
 -------------------------------------------------------------------------------
@@ -137,19 +164,19 @@ let lockToPubKey asset amount pk tx = // 10
     let! cpkHash = hashCPK cpk in // 231
     TX.lockToPubKey asset amount cpkHash tx // 64
 
-val lockToSender: asset -> U64.t -> sender -> txSkeleton -> txSkeleton `cost` 623
-let lockToSender asset amount sender txSkel = // 13
+val lockToSender: asset -> U64.t -> sender -> txSkeleton -> result txSkeleton `cost` 624
+let lockToSender asset amount sender txSkel = // 14
     match sender with
     | PK pk ->
-        txSkel
-        |> lockToPubKey asset amount pk // 610
+        ret txSkel
+        >>= lockToPubKey asset amount pk // 610
+        >>= RT.ok
     | Contract cid ->
-        txSkel
-        |> TX.lockToContract asset amount cid // 64
-        |> inc 546
+        ret txSkel
+        >>= TX.lockToContract asset amount cid // 64
+        >>= RT.incOK 546
     | Anonymous ->
-        txSkel
-        |> incRet 610
+        RT.incFailw 610 "Sender can't be anonymous"
 
 
 
@@ -520,25 +547,27 @@ let validateRedemption redemption = // 7
 -------------------------------------------------------------------------------
 *)
 
-val buyEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 3632
-let buyEvent txSkel contractId sender bevent = // 37
+val buyEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 3709
+let buyEvent txSkel contractId sender bevent = // 48
     let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1077
     let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1077
-    let! m         = TX.getAvailableTokens Asset.zenAsset txSkel            in // 64
+    let! m         = TX.getAvailableTokens Asset.zenAsset txSkel              in // 64
+    let open RT in
     ret txSkel
-    >>= TX.mint m bullToken             // 64
-    >>= TX.mint m bearToken             // 64
-    >>= lockToSender bullToken m sender // 623
-    >>= lockToSender bearToken m sender // 623
-    >>= CR.ofTxSkel                     // 3
+    >>= (TX.mint m bullToken >> liftCost)                           // 64
+    >>= (TX.mint m bearToken >> liftCost)                           // 64
+    >>= lockToSender bullToken m sender                             // 624
+    >>= lockToSender bearToken m sender                             // 624
+    >>= (TX.lockToContract Asset.zenAsset m contractId >> liftCost) // 64
+    >>= CR.ofTxSkel                                                 // 3
 
-val buy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 4349
+val buy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 4426
 let buy txSkel contractId sender dict = // 10
     let open RT in
     ret dict
     >>= parseDict                         // 15
     >>= parseEvent                        // 692
-    >>= buyEvent txSkel contractId sender // 3632
+    >>= buyEvent txSkel contractId sender // 3709
 
 
 
@@ -548,27 +577,28 @@ let buy txSkel contractId sender dict = // 10
 -------------------------------------------------------------------------------
 *)
 
-val redeemRedemption: txSkeleton -> contractId -> sender -> redemption -> CR.t `cost` 2948
-let redeemRedemption txSkel contractId sender redemption = // 33
+val redeemRedemption: txSkeleton -> contractId -> sender -> redemption -> CR.t `cost` 2953
+let redeemRedemption txSkel contractId sender redemption = // 37
     let! betToken         = mkBetToken contractId redemption.bet       in // 1077
     let  oracleContractId = redemption.bet.bevent.oracleContractId      in
     let  attestation      = redemption.attestation                     in
     let! attestToken      = mkAttestToken oracleContractId attestation in // 1020
     let! m                = TX.getAvailableTokens betToken txSkel      in // 64
+    let open RT in
     ret txSkel
-    >>= TX.destroy m betToken                // 64
-    >>= TX.destroy 1UL attestToken           // 64
-    >>= lockToSender Asset.zenAsset m sender // 623
-    >>= CR.ofTxSkel                          // 3
+    >>= (TX.destroy m   betToken    >> liftCost) // 64
+    >>= (TX.destroy 1UL attestToken >> liftCost) // 64
+    >>= lockToSender Asset.zenAsset m sender     // 624
+    >>= CR.ofTxSkel                              // 3
 
-val redeem: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 117924
+val redeem: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 117929
 let redeem txSkel contractId sender dict = // 12
     let open RT in
     ret dict
     >>= parseDict                                 // 15
     >>= parseRedemption                           // 7284
     >>= validateRedemption                        // 107665
-    >>= redeemRedemption txSkel contractId sender // 2948
+    >>= redeemRedemption txSkel contractId sender // 2953
 
 
 
@@ -587,17 +617,17 @@ val main:
     -> messageBody : option data
     -> wallet      : wallet
     -> state       : option data
-    -> CR.t `cost` 117934
+    -> CR.t `cost` 117939
 let main txSkel context contractId command sender messageBody wallet state = // 10
     match command with
     | "Buy" ->
-        buy txSkel contractId sender messageBody // 4349
-        |> inc 113575
+        buy txSkel contractId sender messageBody // 4426
+        |> inc 113503
     | "Redeem" ->
         redeem txSkel contractId sender messageBody // 117924
     | _ ->
         RT.failw "Unsupported command"
-        |> inc 117924
+        |> inc 117929
 
 val cf:
        txSkel     : txSkeleton
@@ -609,4 +639,4 @@ val cf:
     -> state      : option data
     -> nat `cost` 2
 let cf _ _ _ _ _ _ _ =
-    (117934 <: nat) |> ret
+    (117939 <: nat) |> ret
