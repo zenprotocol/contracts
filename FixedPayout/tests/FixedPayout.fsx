@@ -404,7 +404,7 @@ run_test "valid data & empty Tx"
             |> Input.Wallet.realize fpcRealizer
          state       =
             None
-    } |> should_PASS
+    } |> should_PASS_with_invalid_amounts
     end
 
 let bevent001 = {
@@ -648,7 +648,7 @@ run_test "valid Bear redemption (100 ZP)"
             fpcRealizer
     end
 
-run_test "wrong position (100 ZP)"
+run_test "wrong position"
     begin
     Input.feedContract fpcMain CONTRACT_ID_FP {
          txSkel      =
@@ -689,7 +689,7 @@ run_test "wrong position (100 ZP)"
     } |> should_FAIL_with "Position doesn't match the event"
     end
 
-run_test "wrong token (100 ZP)"
+run_test "wrong token"
     begin
     Input.feedContract fpcMain CONTRACT_ID_FP {
          txSkel      =
@@ -728,4 +728,106 @@ run_test "wrong token (100 ZP)"
          state       =
             None
     } |> should_PASS_with_invalid_amounts
+    end
+
+let beventBull_out_of_time = {
+    oraclePubKey     = PK_Oracle
+    oracleContractId = CID_Oracle
+    ticker           = ProofData.ticker
+    priceLow         = ProofData.price - 10UL
+    priceHigh        = Some (ProofData.price + 10UL)
+    timeLow          = ProofData.timestamp + 10UL
+    timeHigh         = Some (ProofData.timestamp + 20UL)
+}
+
+run_test "out of time Bull"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull_out_of_time)) 100UL
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsContract (Abs.OtherContract CID_Oracle)) (AttestToken attest001) 1UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            "Redeem"
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Commit           = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull_out_of_time.priceLow
+                  _PriceHigh        = beventBull_out_of_time.priceHigh
+                  _TimeLow          = Some beventBull_out_of_time.timeLow
+                  _TimeHigh         = beventBull_out_of_time.timeHigh
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _CWT              = Some ProofData.cwt
+                  _DefaultHash      = Some ProofData.defaultHash
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Attestation time is not within the given time bounds"
+    end
+
+let beventBear_out_of_time = {
+    oraclePubKey     = PK_Oracle
+    oracleContractId = CID_Oracle
+    ticker           = ProofData.ticker
+    priceLow         = ProofData.price + 10UL
+    priceHigh        = Some (ProofData.price + 20UL)
+    timeLow          = ProofData.timestamp + 10UL
+    timeHigh         = Some (ProofData.timestamp + 20UL)
+}
+
+run_test "out of time Bear"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear_out_of_time)) 100UL
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsContract (Abs.OtherContract CID_Oracle)) (AttestToken attest001) 1UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            "Redeem"
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Commit           = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear_out_of_time.priceLow
+                  _PriceHigh        = beventBear_out_of_time.priceHigh
+                  _TimeLow          = Some beventBear_out_of_time.timeLow
+                  _TimeHigh         = beventBear_out_of_time.timeHigh
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _CWT              = Some ProofData.cwt
+                  _DefaultHash      = Some ProofData.defaultHash
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Attestation time is not within the given time bounds"
     end
