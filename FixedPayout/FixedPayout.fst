@@ -585,11 +585,11 @@ let redeemRedemption w txSkel contractId sender redemption = // 46
     let! m                = TX.getAvailableTokens betToken txSkel      in // 64
     let open RT in
     ret txSkel
-    >>= (fun tx -> ofOptionT "Insufficient funds" (TX.fromWallet Asset.zenAsset 1UL contractId w tx)) // Wallet.size w * 128 + 192
-    >>= (TX.destroy m   betToken    >> liftCost)                                                      // 64
-    >>= (TX.destroy 1UL attestToken >> liftCost)                                                      // 64
-    >>= lockToSender Asset.zenAsset m sender                                                          // 624
-    >>= CR.ofTxSkel                                                                                   // 3
+    >>= (fun tx -> ofOptionT "Insufficient funds" (TX.fromWallet Asset.zenAsset m contractId w tx)) // Wallet.size w * 128 + 192
+    >>= (TX.destroy m   betToken    >> liftCost)                                                    // 64
+    >>= (TX.destroy 1UL attestToken >> liftCost)                                                    // 64
+    >>= lockToSender Asset.zenAsset m sender                                                        // 624
+    >>= CR.ofTxSkel                                                                                 // 3
 
 val redeem: (w:wallet) -> txSkeleton -> contractId -> sender -> option data -> CR.t `cost` (Wallet.size w * 128 + 118131)
 let redeem w txSkel contractId sender dict = // 13
