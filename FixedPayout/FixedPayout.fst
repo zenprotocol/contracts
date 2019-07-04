@@ -5,20 +5,21 @@ open Zen.Cost
 open Zen.Types
 open Zen.Data
 
-module U8    = FStar.UInt8
-module U64   = FStar.UInt64
-module RT    = Zen.ResultT
-module Dict  = Zen.Dictionary
-module Sha3  = Zen.Hash.Sha3
-module TX    = Zen.TxSkeleton
-module CR    = Zen.ContractResult
-module Asset = Zen.Asset
-module Opt   = Zen.Option
-module OptT  = Zen.OptionT
-module Array = Zen.Array
-module Str   = FStar.String
-module CId   = Zen.ContractId
-module SMT   = Zen.SparseMerkleTree
+module U8     = FStar.UInt8
+module U64    = FStar.UInt64
+module RT     = Zen.ResultT
+module Dict   = Zen.Dictionary
+module Sha3   = Zen.Hash.Sha3
+module TX     = Zen.TxSkeleton
+module CR     = Zen.ContractResult
+module Asset  = Zen.Asset
+module Opt    = Zen.Option
+module OptT   = Zen.OptionT
+module Array  = Zen.Array
+module Str    = FStar.String
+module CId    = Zen.ContractId
+module SMT    = Zen.SparseMerkleTree
+module Wallet = Zen.Wallet
 
 type parser (a:Type) (m:nat) =
     option (Dict.t data) -> result a `cost` m
@@ -80,7 +81,6 @@ type redemption = {
 }
 
 (*
-
 val main:
        txSkel      : txSkeleton
     -> context     : context
@@ -105,7 +105,6 @@ val cf:
     -> nat `cost` 2
 let cf _ _ _ _ _ _ _ =
     (4 <: nat) |> ret
-
 *)
 
 (*
@@ -577,28 +576,29 @@ let buy txSkel contractId sender dict = // 10
 -------------------------------------------------------------------------------
 *)
 
-val redeemRedemption: txSkeleton -> contractId -> sender -> redemption -> CR.t `cost` 2953
-let redeemRedemption txSkel contractId sender redemption = // 37
+val redeemRedemption: (w:wallet) -> txSkeleton -> contractId -> sender -> redemption -> CR.t `cost` (Wallet.size w * 128 + 3154)
+let redeemRedemption w txSkel contractId sender redemption = // 46
     let! betToken         = mkBetToken contractId redemption.bet       in // 1077
-    let  oracleContractId = redemption.bet.bevent.oracleContractId      in
+    let  oracleContractId = redemption.bet.bevent.oracleContractId     in
     let  attestation      = redemption.attestation                     in
     let! attestToken      = mkAttestToken oracleContractId attestation in // 1020
     let! m                = TX.getAvailableTokens betToken txSkel      in // 64
     let open RT in
     ret txSkel
-    >>= (TX.destroy m   betToken    >> liftCost) // 64
-    >>= (TX.destroy 1UL attestToken >> liftCost) // 64
-    >>= lockToSender Asset.zenAsset m sender     // 624
-    >>= CR.ofTxSkel                              // 3
+    >>= (fun tx -> ofOptionT "Insufficient funds" (TX.fromWallet Asset.zenAsset 1UL contractId w tx)) // Wallet.size w * 128 + 192
+    >>= (TX.destroy m   betToken    >> liftCost)                                                      // 64
+    >>= (TX.destroy 1UL attestToken >> liftCost)                                                      // 64
+    >>= lockToSender Asset.zenAsset m sender                                                          // 624
+    >>= CR.ofTxSkel                                                                                   // 3
 
-val redeem: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 117929
-let redeem txSkel contractId sender dict = // 12
+val redeem: (w:wallet) -> txSkeleton -> contractId -> sender -> option data -> CR.t `cost` (Wallet.size w * 128 + 118131)
+let redeem w txSkel contractId sender dict = // 13
     let open RT in
     ret dict
-    >>= parseDict                                 // 15
-    >>= parseRedemption                           // 7284
-    >>= validateRedemption                        // 107665
-    >>= redeemRedemption txSkel contractId sender // 2953
+    >>= parseDict                                   // 15
+    >>= parseRedemption                             // 7284
+    >>= validateRedemption                          // 107665
+    >>= redeemRedemption w txSkel contractId sender // Wallet.size w * 128 + 3154
 
 
 
@@ -615,19 +615,32 @@ val main:
     -> command     : string
     -> sender      : sender
     -> messageBody : option data
-    -> wallet      : wallet
+    -> w           : wallet
     -> state       : option data
-    -> CR.t `cost` 117939
-let main txSkel context contractId command sender messageBody wallet state = // 10
+    -> CR.t `cost` (
+        match command with
+        | "Buy" ->
+            4426 + 8
+        | "Redeem" ->
+            Wallet.size w * 128 + 118131 + 8
+        | _ ->
+            8)
+let main txSkel context contractId command sender messageBody w state = // 15
     match command with
     | "Buy" ->
         buy txSkel contractId sender messageBody // 4426
-        |> inc 113503
+        <: CR.t `cost` (
+            match command with
+            | "Buy" ->
+                4426
+            | "Redeem" ->
+                Wallet.size w * 128 + 118131
+            | _ ->
+                0)
     | "Redeem" ->
-        redeem txSkel contractId sender messageBody // 117924
+        redeem w txSkel contractId sender messageBody // Wallet.size w * 128 + 118131
     | _ ->
         RT.failw "Unsupported command"
-        |> inc 117929
 
 val cf:
        txSkel     : txSkeleton
@@ -635,8 +648,16 @@ val cf:
     -> command    : string
     -> sender     : sender
     -> messageBody: option data
-    -> wallet     : wallet
+    -> w          : wallet
     -> state      : option data
-    -> nat `cost` 2
-let cf _ _ _ _ _ _ _ =
-    (117939 <: nat) |> ret
+    -> nat `cost` 12
+let cf _ _ command _ _ w _ =
+    ((
+        match command with
+        | "Buy" ->
+            4426 + 8
+        | "Redeem" ->
+            Wallet.size w * 128 + 118131 + 8
+        | _ ->
+            8
+     ) <: nat) |> ret
