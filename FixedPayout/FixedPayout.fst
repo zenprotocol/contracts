@@ -18,7 +18,7 @@ module OptT   = Zen.OptionT
 module Array  = Zen.Array
 module Str    = FStar.String
 module CId    = Zen.ContractId
-module SMT    = Zen.SparseMerkleTree
+module Esmt   = Zen.Esmt
 module Wallet = Zen.Wallet
 
 type parser (a:Type) (m:nat) =
@@ -517,26 +517,26 @@ let hashKey s = // 9
     Sha3.ofString s // (6 * (Str.length s) + 20)
     |> inc (24 - (6 * Str.length s)) // 44
 
-val verifyAuditPath : proof -> bool `cost` 107594
-let verifyAuditPath proof = // 17
-    let! key   = hashKey proof.key            in // 53
-    let  value = SMT.serializeU64 proof.value in
-    SMT.verify proof.cwt proof.defaultHash proof.root proof.auditPath key (Some value) // 107524
+val verifyAuditPath : proof -> bool `cost` 111254
+let verifyAuditPath proof = // 19
+    let! key   = hashKey proof.key             in // 53
+    let! value = Esmt.serializeU64 proof.value in // 48
+    Esmt.verify proof.cwt proof.defaultHash proof.root proof.auditPath key (Some value) // 111134
 
-val validateAuditPath: redemption -> result redemption `cost` 107602
+val validateAuditPath: redemption -> result redemption `cost` 111262
 let validateAuditPath redemption = // 8
-    let! b = verifyAuditPath redemption.proof in // 107594
+    let! b = verifyAuditPath redemption.proof in // 111254
     if b
         then RT.ok redemption
         else RT.failw "Invalid audit path"
 
-val validateRedemption: redemption -> result redemption `cost` 107665
+val validateRedemption: redemption -> result redemption `cost` 111325
 let validateRedemption redemption = // 7
     let open RT in
     ret redemption
     >>= validateTime      // 25
     >>= validatePrice     // 31
-    >>= validateAuditPath // 107602
+    >>= validateAuditPath // 111262
 
 
 
@@ -591,13 +591,13 @@ let redeemRedemption w txSkel contractId sender redemption = // 46
     >>= lockToSender Asset.zenAsset m sender                                                        // 624
     >>= CR.ofTxSkel                                                                                 // 3
 
-val redeem: (w:wallet) -> txSkeleton -> contractId -> sender -> option data -> CR.t `cost` (Wallet.size w * 128 + 118131)
+val redeem: (w:wallet) -> txSkeleton -> contractId -> sender -> option data -> CR.t `cost` (Wallet.size w * 128 + 121791)
 let redeem w txSkel contractId sender dict = // 13
     let open RT in
     ret dict
     >>= parseDict                                   // 15
     >>= parseRedemption                             // 7284
-    >>= validateRedemption                          // 107665
+    >>= validateRedemption                          // 111325
     >>= redeemRedemption w txSkel contractId sender // Wallet.size w * 128 + 3154
 
 
@@ -622,7 +622,7 @@ val main:
         | "Buy" ->
             4426 + 8
         | "Redeem" ->
-            Wallet.size w * 128 + 118131 + 8
+            Wallet.size w * 128 + 121791 + 8
         | _ ->
             8)
 let main txSkel context contractId command sender messageBody w state = // 15
@@ -634,7 +634,7 @@ let main txSkel context contractId command sender messageBody w state = // 15
             | "Buy" ->
                 4426
             | "Redeem" ->
-                Wallet.size w * 128 + 118131
+                Wallet.size w * 128 + 121791
             | _ ->
                 0)
     | "Redeem" ->
@@ -657,7 +657,7 @@ let cf _ _ command _ _ w _ =
         | "Buy" ->
             4426 + 8
         | "Redeem" ->
-            Wallet.size w * 128 + 118131 + 8
+            Wallet.size w * 128 + 121791 + 8
         | _ ->
             8
      ) <: nat) |> ret
