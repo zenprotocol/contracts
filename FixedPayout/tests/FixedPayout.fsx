@@ -8,8 +8,6 @@ module Extracted  = Zen.Types.Extracted
 module Sha3       = Zen.Hash.Sha3
 module PKModule   = Crypto.PublicKey
 
-#r "/home/ariel/workspace/changes/ContractsTestingLib/src/ContractsTestingLib/bin/Release/ContractsTestingLib.dll"
-
 #load "ProofData.fsx"
 
 module Input       = ContractInput
