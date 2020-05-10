@@ -14,7 +14,6 @@ module W = Zen.Wallet
 
 type args =
     { commit       : hash
-    ; timestamp    : timestamp
     ; oraclePubKey : publicKey
     }
 
@@ -26,12 +25,11 @@ type assets =
 // compressed public key
 type cpk = byte ** hash
 
-let parseArgs (pk : option publicKey) (msg: option data): result args `cost` 267 = // 73
+let parseArgs (pk : option publicKey) (msg: option data): result args `cost` 167 = // 37
     let open OT in
     match msg with
     | Some (Collection (Dict dict)) -> begin
         let! commit = Dict.tryFind "Commit" dict in // 64
-        let! timestamp = Dict.tryFind "Timestamp" dict in // 64
         let! oraclePubKey =
           begin match pk with
           | None ->
@@ -41,25 +39,16 @@ let parseArgs (pk : option publicKey) (msg: option data): result args `cost` 267
               pk
               |> incSome 66
           end
-        in match commit, timestamp, oraclePubKey with
-        | Some (Hash commit), Some (U64 timestamp), Some oraclePubKey ->
+        in match commit, oraclePubKey with
+        | Some (Hash commit), Some oraclePubKey ->
             RT.ok ({ commit=commit;
-                     timestamp=timestamp;
                      oraclePubKey=oraclePubKey })
-        | _, Some (U64 _), Some _ ->
+        | _, Some _ ->
             RT.failw "Could not parse Commit"
-        | Some (Hash _), _, Some _ ->
-            RT.failw "Could not parse Timestamp"
-        | Some (Hash _), Some (U64 _), None ->
+        | Some (Hash _), None ->
             RT.failw "Could not parse OraclePubKey"
-        | _, _, Some _ ->
-            RT.failw "Could not parse Commit & Timestamp"
-        | _, Some (U64 _), None ->
+        | _, None ->
             RT.failw "Could not parse Commit & OraclePubKey"
-        | Some (Hash _), _, None ->
-            RT.failw "Could not parse Timestamp & OraclePubKey"
-        | _, _, _ ->
-            RT.failw "Could not parse Timestamp, Timestamp, & OraclePubKey"
         end
     | _ -> RT.autoFailw "MessageBody must be a dictionary."
 
@@ -81,16 +70,15 @@ let hashCPK (cpk:cpk): hash `cost` 227 = // 4
     updateCPK cpk Sha3.empty // 203
     >>= Sha3.finalize // 20
 
-let hashArgs (args:args): hash `cost` 784 = // 16
-    let! cpk = compress args.oraclePubKey in
+let hashArgs (args:args): hash `cost` 732 = // 12
+    let! cpk = compress args.oraclePubKey in // 305
     Sha3.updateHash args.commit Sha3.empty // 192
-    >>= Sha3.updateU64 args.timestamp // 48
     >>= updateCPK cpk // 203
     >>= Sha3.finalize // 20
 
-val mkAssets: contractId -> args:args -> assets `cost` 1014
+val mkAssets: contractId -> args:args -> assets `cost` 962
 let mkAssets (v, h) args = // 18
-    let! argsHash = hashArgs args in // 784
+    let! argsHash = hashArgs args in // 732
     let! arsgHash2 = Sha3.updateHash argsHash Sha3.empty // 192
                      >>= Sha3.finalize in // 20
     ret ({ commitment=v,h,argsHash; attestation=v,h,arsgHash2 })
@@ -99,9 +87,9 @@ let mkAssets (v, h) args = // 18
 // Making a commitment
 //
 
-val commit: txSkeleton -> contractId -> publicKey -> args -> CR.t `cost` 1159
+val commit: txSkeleton -> contractId -> publicKey -> args -> CR.t `cost` 1107
 let commit tx cid senderPK args = // 14
-    let! ({commitment=commitment}) = mkAssets cid args in // 1014
+    let! ({commitment=commitment}) = mkAssets cid args in // 962
     // mint the commitment token
     TX.mint 1UL commitment tx // 64
     // lock the commitment token to the contract
@@ -129,9 +117,8 @@ let attestTx tx cid senderPK assets: txSkeleton `cost` 891 = // 27
     // lock the commitment token to the contract
     >>= TX.lockToContract assets.commitment 1UL cid // 64
 
-// (1014 + (891 + (Zen.Wallet.size w * 128 + 192) + 3) + 18)
-let attest tx cid senderPK w (args:args) : contractResult `cost` (2118 + W.size w * 128) = // 18
-    let! assets = mkAssets cid args in // 1014
+let attest tx cid senderPK w (args:args) : contractResult `cost` (962 + (891 + (Zen.Wallet.size w * 128 + 192) + 3) + 18) = // 18
+    let! assets = mkAssets cid args in // 962
     // the tx, minus contract wallet inputs
     attestTx tx cid senderPK assets // 891
     // add a commitment token from the contract wallet
@@ -147,22 +134,24 @@ let main tx _ cid command sender msg w _ = // 21
     let open RT in
     match command, sender with
     | "Commit", PK pk ->
-        parseArgs (Some pk) msg // 267
-        >>= commit tx cid pk // 1159
+        parseArgs (Some pk) msg // 167
+        >>= commit tx cid pk // 1107
         <: CR.t `cost` begin match command, sender with
-                       | "Commit", PK _ -> 267 + 1159
-                       | "Attest", PK _ -> 267 + 2118 + Zen.Wallet.size w * 128
+                       | "Commit", PK _ -> 1274
+                       | "Attest", PK _ -> 167 + (962 + (891 + (Zen.Wallet.size w * 128 + 192) + 3) + 18)
                        | _ -> 0 end
     | "Attest", PK pk ->
-        parseArgs None msg // 267
-        >>= attest tx cid pk w // 2118 + W.size w * 128
+        parseArgs None msg // 167
+        >>= attest tx cid pk w // (962 + (891 + (Zen.Wallet.size w * 128 + 192) + 3) + 18)
     | _, PK pk ->
         failw "Command not recognized"
     | _, _ ->
         failw "Sender must be a public key"
 
-let cf _ _ command sender _ w _ : nat `cost` 19 = // 19
-    ret begin match command, sender with
-        | "Commit", PK _ -> 267 + 1159 + 21
-        | "Attest", PK _ -> 267 + 2118 + Zen.Wallet.size w * 128 + 21
-        | _ -> 21 <: nat end
+let cf _ _ command sender _ w _ : nat `cost` 27 = // 27
+    ret ((match command, sender with
+          | "Commit", Zen.Types.Main.PK _ -> 1274
+          | "Attest", Zen.Types.Main.PK _ ->
+            167 + (962 + (891 + (Zen.Wallet.size w * 128 + 192) + 3) + 18)
+          | _ -> 0)
+        + 21)
