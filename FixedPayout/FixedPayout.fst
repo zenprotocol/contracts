@@ -18,8 +18,25 @@ module OptT   = Zen.OptionT
 module Array  = Zen.Array
 module Str    = FStar.String
 module CId    = Zen.ContractId
-module Esmt   = Zen.Esmt
+module Merkle = Zen.MerkleTree
 module Wallet = Zen.Wallet
+
+let auditPathMaxLength : nat = 30
+
+let main txSkel context contractId command sender messageBody w state = // 15
+    CR.ofTxSkel txSkel
+
+val cf:
+       txSkel     : txSkeleton
+    -> context    : context
+    -> command    : string
+    -> sender     : sender
+    -> messageBody: option data
+    -> w          : wallet
+    -> state      : option data
+    -> nat `cost` 1
+let cf _ _ command _ _ w _ =
+    ret (4 <: nat)
 
 type parser (a:Type) (m:nat) =
     option (Dict.t data) -> result a `cost` m
@@ -35,10 +52,10 @@ type cpk =
     byte ** hash
 
 type preAuditPath =
-    p: list data { length p == 256 }
+    p: list data { length p <= auditPathMaxLength }
 
 type auditPath =
-    p: list hash { length p == 256 }
+    p: list hash { length p <= auditPathMaxLength }
 
 type attestation = {
     timestamp  : timestamp;
@@ -70,8 +87,7 @@ type proof = {
     value       : U64.t;
     root        : hash;
     auditPath   : auditPath;
-    cwt         : string;
-    defaultHash : hash;
+    index       : U64.t;
 }
 
 type redemption = {
@@ -80,32 +96,7 @@ type redemption = {
     proof       : proof;
 }
 
-(*
-val main:
-       txSkel      : txSkeleton
-    -> context     : context
-    -> contractId  : contractId
-    -> command     : string
-    -> sender      : sender
-    -> messageBody : option data
-    -> wallet      : wallet
-    -> state       : option data
-    -> CR.t `cost` 4
-let main txSkel context contractId command sender messageBody wallet state = // 2
-    CR.ofTxSkel txSkel // 3
 
-val cf:
-       txSkel     : txSkeleton
-    -> context    : context
-    -> command    : string
-    -> sender     : sender
-    -> messageBody: option data
-    -> wallet     : wallet
-    -> state      : option data
-    -> nat `cost` 2
-let cf _ _ _ _ _ _ _ =
-    (4 <: nat) |> ret
-*)
 
 (*
 -------------------------------------------------------------------------------
@@ -131,7 +122,6 @@ let rec tryMap #a #b #n f ls = //20
             OptT.some result
         | _ -> OptT.none end
     | [] -> [] |> OptT.incSome (length ls * (n + 20))
-
 
 let runOpt (#a #s:Type) (#m:nat) (update:a -> s -> s `cost` m) (x:option a) (st:s): s `cost` (m + 5) =
     Opt.maybe (incRet m) update x st
@@ -231,33 +221,41 @@ let parseTicker fieldName errMsg dict = // 6
             else RT.failw "Ticker size can't be bigger than 4"
     end
 
-//val extractHashes: string -> ls:list data -> result (ls':list hash { length ls' == length ls }) `cost` (length ls * 22 + 25)
+val extractHashes: string -> ls:list data -> result (ls':list hash { length ls' == length ls }) `cost` (length ls * (2 + 20) + 20 + 5)
 let extractHashes errMsg ls = // 5
     tryMap tryHash ls // (length ls * 22 + 20)
     |> RT.ofOptionT errMsg
 
-val extractAuditPath: preAuditPath -> result auditPath `cost` 5661
-let extractAuditPath ls = // 4
+val extractAuditPath': ls:preAuditPath -> result auditPath `cost` (length ls * 22 + 29)
+let extractAuditPath' ls = // 4
     let open RT in
-    extractHashes "All the items in the audit path must be hashes" ls // 5657 = 256 * 22 + 25
-    $> (fun xs -> let (xs:list hash { length xs == 256 }) = xs in xs)
+    extractHashes "All the items in the audit path must be hashes" ls // = X * 22 + 25
+    $> (fun xs -> let (xs:list hash { length xs <= auditPathMaxLength }) = xs in xs)
+
+val extractAuditPath: ls:preAuditPath
+    -> result auditPath `cost` (auditPathMaxLength * 22 + 40)
+let extractAuditPath (ls:preAuditPath) =
+    extractAuditPath' ls
+    |> inc ((auditPathMaxLength - length ls) * 22)
+    |> (fun x -> x <: result auditPath `cost` (auditPathMaxLength * 22 + 29))
 
 val parsePreAuditPath: string -> string -> option (Dict.t data) -> result preAuditPath `cost` 92
 let parsePreAuditPath fieldName errMsg dict = // 6
     let open RT in
     parseField tryList fieldName errMsg dict >>= // 79
     begin fun ls -> // 7
-        if length ls = 256
+        if length ls <= auditPathMaxLength
             then RT.ok (ls <: preAuditPath)
             else RT.failw "AuditPath length must be 256"
     end
 
-val parseAuditPath: string -> string -> option (Dict.t data) -> result auditPath `cost` 5760
+val parseAuditPath: string -> string -> option (Dict.t data)
+    -> result auditPath `cost` (auditPathMaxLength * 22 + 139)
 let parseAuditPath fieldName errMsg dict = // 7
     let open RT in
     ret dict
     >>= parsePreAuditPath fieldName errMsg // 92
-    >>= extractAuditPath // 5661
+    >>= extractAuditPath // (length ls * 22 + 25 + (auditPathMaxLength - length ls) * 22 + 12)
 
 val parsePosition: string -> string -> option (Dict.t data) -> result position `cost` 87
 let parsePosition fieldName errMsg dict = // 6
@@ -292,10 +290,9 @@ val getPriceLow         : parser U64.t          82
 val getPriceHigh        : parser (option U64.t) 77
 val getTimeLow          : parser U64.t          82
 val getTimeHigh         : parser (option U64.t) 77
-val getAuditPath        : parser auditPath      5764
+val getAuditPath        : parser auditPath      (auditPathMaxLength * 22 + 139 + 4)
 val getValue            : parser U64.t          82
-val getCWT              : parser string         82
-val getDefaultHash      : parser hash           82
+val getIndex            : parser U64.t          82
 val getPosition         : parser position       91
 val getOracleContractId : parser contractId     162
 
@@ -319,32 +316,35 @@ let getAuditPath        dict = dict |>
     parseAuditPath               "AuditPath"        "Could not parse AuditPath"
 let getValue            dict = dict |>
     parseField      tryU64       "Value"            "Could not parse Value"
-let getCWT              dict = dict |>
-    parseField      tryString    "CWT"              "Could not parse CWT"
-let getDefaultHash      dict = dict |>
-    parseField      tryHash      "DefaultHash"      "Could not parse DefaultHash"
+let getIndex              dict = dict |>
+    parseField      tryU64       "Index"            "Could not parse Index"
 let getPosition         dict = dict |>
     parsePosition                "Position"         "Could not parse Position"
 let getOracleContractId dict = dict |>
     parseContractId              "OracleContractId" "Could not parse OracleContractId"
 
-val parseProof: option (Dict.t data) -> result proof `cost` 6217
-let parseProof dict = // 31
+val parseProof': option (Dict.t data)
+    -> result proof `cost` (94 + (auditPathMaxLength * 22 + 415))
+let parseProof' dict = // 31
     let open RT in
     dict |> getTicker      >>= (fun key         -> // 94
     dict |> getValue       >>= (fun value       -> // 82
     dict |> getCommit      >>= (fun root        -> // 82
-    dict |> getAuditPath   >>= (fun auditPath   -> // 5764
-    dict |> getCWT         >>= (fun cwt         -> // 82
-    dict |> getDefaultHash >>= (fun defaultHash -> // 82
+    dict |> getAuditPath   >>= (fun auditPath   -> // auditPathMaxLength * 22 + 139 + 4
+    dict |> getIndex       >>= (fun index       -> // 82
         RT.ok ({
             key         = key;
             value       = value;
             root        = root;
             auditPath   = auditPath;
-            cwt         = cwt;
-            defaultHash = defaultHash;
-        })))))))
+            index       = index;
+        }))))))
+
+val parseProof: option (Dict.t data)
+    -> result proof `cost` (auditPathMaxLength * 22 + 512)
+let parseProof dict =
+    parseProof' dict
+    |> (fun x -> x <: result proof `cost` (auditPathMaxLength * 22 + 509))
 
 val parseAttestation: option (Dict.t data) -> result attestation `cost` 262
 let parseAttestation dict = // 16
@@ -378,13 +378,13 @@ let parseEvent dict = // 36
             timeHigh         = timeHigh;
         }))))))))
 
-val parseRedemption: option (Dict.t data) -> result redemption `cost` 7284
-let parseRedemption dict = // 22
+val parseRedemption': option (Dict.t data) -> result redemption `cost` (692 + (auditPathMaxLength * 22 + 887))
+let parseRedemption' dict = // 22
     let open RT in
     dict |> parseEvent       >>= (fun bevent      -> // 692
     dict |> getPosition      >>= (fun position    -> // 91
     dict |> parseAttestation >>= (fun attestation -> // 262
-    dict |> parseProof       >>= (fun proof       -> // 6217
+    dict |> parseProof       >>= (fun proof       -> // (auditPathMaxLength * 22 + 512)
         RT.ok ({
             bet         = {
                 bevent   = bevent;
@@ -393,6 +393,11 @@ let parseRedemption dict = // 22
             attestation = attestation;
             proof       = proof;
         })))))
+
+val parseRedemption: option (Dict.t data) -> result redemption `cost` (auditPathMaxLength * 22 + 1582)
+let parseRedemption dict =
+    parseRedemption' dict
+    |> (fun x -> x <: result redemption `cost` (auditPathMaxLength * 22 + 1579))
 
 
 
@@ -440,7 +445,7 @@ let updatePosition position s = // 6
     | Bull -> "Bull"
     | Bear -> "Bear"
     end
-
+(*)
 val hashCommitment : attestation -> hash `cost` 792
 let hashCommitment attestation = // 15
     ret Sha3.empty
@@ -473,7 +478,7 @@ let mkAttestToken (v,h) attestation = // 7
     let! attestHash = hashAttestation attestation in
     ret (v, h, attestHash)
 
-
+(*)
 
 (*
 -------------------------------------------------------------------------------
