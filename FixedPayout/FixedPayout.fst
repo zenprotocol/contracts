@@ -23,6 +23,7 @@ module Wallet = Zen.Wallet
 
 let auditPathMaxLength : nat = 30
 
+(*
 let main txSkel context contractId command sender messageBody w state = // 15
     CR.ofTxSkel txSkel
 
@@ -37,6 +38,7 @@ val cf:
     -> nat `cost` 1
 let cf _ _ command _ _ w _ =
     ret (4 <: nat)
+*)
 
 type parser (a:Type) (m:nat) =
     option (Dict.t data) -> result a `cost` m
@@ -437,15 +439,12 @@ let updateEvent bevent s = // 31
     >>= Sha3.updateU64          bevent.timeLow          // 48
     >>= Sha3.updateU64 `runOpt` bevent.timeHigh         // 53
 
-val updatePosition : hashUpdate position 30
-let updatePosition position s = // 6
-    ret s
-    >>= Sha3.updateString // 24
-    begin match position with
-    | Bull -> "Bull"
-    | Bear -> "Bear"
-    end
-(*)
+val updatePosition : hashUpdate position 28
+let updatePosition position s = // 4
+    match position with
+    | Bull -> Sha3.updateString "Bull" s // 24
+    | Bear -> Sha3.updateString "Bear" s // 24
+
 val hashCommitment : attestation -> hash `cost` 792
 let hashCommitment attestation = // 15
     ret Sha3.empty
@@ -461,14 +460,14 @@ let hashAttestation attestation = // 9
     >>= Sha3.updateHash commit // 192
     >>= Sha3.finalize          // 20
 
-val hashBet : bet -> hash `cost` 1070
+val hashBet : bet -> hash `cost` 1068
 let hashBet bet = // 11
     ret Sha3.empty
     >>= updateEvent    bet.bevent    // 1009
-    >>= updatePosition bet.position // 30
+    >>= updatePosition bet.position // 28
     >>= Sha3.finalize               // 20
 
-val mkBetToken : contractId -> bet -> asset `cost` 1077
+val mkBetToken : contractId -> bet -> asset `cost` 1075
 let mkBetToken (v, h) bet = // 7
     let! betHash = hashBet bet in
     ret (v, h, betHash)
@@ -478,7 +477,7 @@ let mkAttestToken (v,h) attestation = // 7
     let! attestHash = hashAttestation attestation in
     ret (v, h, attestHash)
 
-(*)
+
 
 (*
 -------------------------------------------------------------------------------
@@ -517,31 +516,41 @@ let validatePrice redemption = // 21
     | _ ->
         RT.failw "Position doesn't match the event"
 
-val hashKey : ticker -> hash `cost` 53
-let hashKey s = // 9
-    Sha3.ofString s // (6 * (Str.length s) + 20)
-    |> inc (24 - (6 * Str.length s)) // 44
+val hashLeaf : key:ticker -> U64.t -> hash `cost` 111
+let hashLeaf (key : ticker) (value : U64.t) = // 19
+    ret Sha3.empty
+    >>= Sha3.updateString key // 6 * 4
+    >>= Sha3.updateU64 value // 48
+    >>= Sha3.finalize // 20
+    |> inc (24 - 6 * Str.length key)
+    |> (fun x -> x <: hash `cost` 92)
 
-val verifyAuditPath : proof -> bool `cost` 111254
-let verifyAuditPath proof = // 19
-    let! key   = hashKey proof.key             in // 53
-    let! value = Esmt.serializeU64 proof.value in // 48
-    Esmt.verify proof.cwt proof.defaultHash proof.root proof.auditPath key (Some value) // 111134
+val verifyAuditPath' : proof:proof
+    -> bool `cost` (111 + (length proof.auditPath * 420 + 4 + (auditPathMaxLength * 420 - length proof.auditPath * 420)) + 25)
+let verifyAuditPath' proof = // 14
+    let! leaf = hashLeaf proof.key proof.value in // 111
+    Merkle.verify proof.root proof.auditPath (U64.v proof.index) leaf // (length proof.auditPath * 420 + 4)
+    |> inc (auditPathMaxLength * 420 - length proof.auditPath * 420)
 
-val validateAuditPath: redemption -> result redemption `cost` 111262
+val verifyAuditPath : proof:proof -> bool `cost` (auditPathMaxLength * 420 + 143)
+let verifyAuditPath proof = // 3
+    verifyAuditPath' proof
+    |> (fun x -> x <: bool `cost` (auditPathMaxLength * 420 + 140))
+
+val validateAuditPath: redemption -> result redemption `cost` (auditPathMaxLength * 420 + 151)
 let validateAuditPath redemption = // 8
-    let! b = verifyAuditPath redemption.proof in // 111254
+    let! b = verifyAuditPath redemption.proof in // (auditPathMaxLength * 420 + 143)
     if b
         then RT.ok redemption
         else RT.failw "Invalid audit path"
 
-val validateRedemption: redemption -> result redemption `cost` 111325
+val validateRedemption: redemption -> result redemption `cost` (auditPathMaxLength * 420 + 214)
 let validateRedemption redemption = // 7
     let open RT in
     ret redemption
     >>= validateTime      // 25
     >>= validatePrice     // 31
-    >>= validateAuditPath // 111262
+    >>= validateAuditPath // (auditPathMaxLength * 420 + 151)
 
 
 
@@ -551,10 +560,10 @@ let validateRedemption redemption = // 7
 -------------------------------------------------------------------------------
 *)
 
-val buyEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 3709
+val buyEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 3705
 let buyEvent txSkel contractId sender bevent = // 48
-    let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1077
-    let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1077
+    let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1075
+    let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1075
     let! m         = TX.getAvailableTokens Asset.zenAsset txSkel              in // 64
     let open RT in
     ret txSkel
@@ -565,13 +574,13 @@ let buyEvent txSkel contractId sender bevent = // 48
     >>= (TX.lockToContract Asset.zenAsset m contractId >> liftCost) // 64
     >>= CR.ofTxSkel                                                 // 3
 
-val buy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 4426
+val buy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 4422
 let buy txSkel contractId sender dict = // 10
     let open RT in
     ret dict
     >>= parseDict                         // 15
     >>= parseEvent                        // 692
-    >>= buyEvent txSkel contractId sender // 3709
+    >>= buyEvent txSkel contractId sender // 3705
 
 
 
@@ -581,8 +590,9 @@ let buy txSkel contractId sender dict = // 10
 -------------------------------------------------------------------------------
 *)
 
-val redeemRedemption: (w:wallet) -> txSkeleton -> contractId -> sender -> redemption -> CR.t `cost` (Wallet.size w * 128 + 3154)
-let redeemRedemption w txSkel contractId sender redemption = // 46
+val redeemRedemption': (w:wallet) -> txSkeleton -> contractId -> sender -> redemption
+    -> CR.t `cost` (1075 + (1020 + (64 + (0 + (Zen.Wallet.size w * 128 + 192 + 7) + 64 + 64 + 624 + 3))) + 39)
+let redeemRedemption' w txSkel contractId sender redemption = // 46
     let! betToken         = mkBetToken contractId redemption.bet       in // 1077
     let  oracleContractId = redemption.bet.bevent.oracleContractId     in
     let  attestation      = redemption.attestation                     in
@@ -596,14 +606,30 @@ let redeemRedemption w txSkel contractId sender redemption = // 46
     >>= lockToSender Asset.zenAsset m sender                                                        // 624
     >>= CR.ofTxSkel                                                                                 // 3
 
-val redeem: (w:wallet) -> txSkeleton -> contractId -> sender -> option data -> CR.t `cost` (Wallet.size w * 128 + 121791)
-let redeem w txSkel contractId sender dict = // 13
+val redeemRedemption: (w:wallet) -> txSkeleton -> contractId -> sender -> redemption
+    -> CR.t `cost` (Zen.Wallet.size w * 128 + 3159)
+let redeemRedemption w txSkel contractId sender redemption = // 7
+    redeemRedemption' w txSkel contractId sender redemption
+    |> (fun x -> x <: CR.t `cost` (Zen.Wallet.size w * 128 + 3152))
+
+val redeem': (w:wallet) -> txSkeleton -> contractId -> sender -> option data -> CR.t `cost`
+      (0 + 15 + (auditPathMaxLength * 22 + 1582) +
+        (auditPathMaxLength * 420 + 214) +
+        (Zen.Wallet.size w * 128 + 3159) +
+        13)
+let redeem' w txSkel contractId sender dict = // 13
     let open RT in
     ret dict
     >>= parseDict                                   // 15
-    >>= parseRedemption                             // 7284
-    >>= validateRedemption                          // 111325
-    >>= redeemRedemption w txSkel contractId sender // Wallet.size w * 128 + 3154
+    >>= parseRedemption                             // (auditPathMaxLength * 22 + 1582)
+    >>= validateRedemption                          // (auditPathMaxLength * 420 + 214)
+    >>= redeemRedemption w txSkel contractId sender // (Zen.Wallet.size w * 128 + 3159)
+
+val redeem: (w:wallet) -> txSkeleton -> contractId -> sender
+    -> option data -> CR.t `cost` (auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 4990)
+let redeem w txSkel contractId sender dict = // 7
+    redeem' w txSkel contractId sender dict
+    |> (fun x -> x <: CR.t `cost` (auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 4983))
 
 
 
@@ -625,25 +651,25 @@ val main:
     -> CR.t `cost` (
         match command with
         | "Buy" ->
-            4426 + 8
+            4422 + 8
         | "Redeem" ->
-            Wallet.size w * 128 + 121791 + 8
+            auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 4990 + 8
         | _ ->
             8)
 let main txSkel context contractId command sender messageBody w state = // 15
     match command with
     | "Buy" ->
-        buy txSkel contractId sender messageBody // 4426
+        buy txSkel contractId sender messageBody // 4422
         <: CR.t `cost` (
             match command with
             | "Buy" ->
-                4426
+                4422
             | "Redeem" ->
-                Wallet.size w * 128 + 121791
+                auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 4990
             | _ ->
                 0)
     | "Redeem" ->
-        redeem w txSkel contractId sender messageBody // Wallet.size w * 128 + 118131
+        redeem w txSkel contractId sender messageBody //auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 4990
     | _ ->
         RT.failw "Unsupported command"
 
@@ -655,14 +681,14 @@ val cf:
     -> messageBody: option data
     -> w          : wallet
     -> state      : option data
-    -> nat `cost` 12
+    -> nat `cost` 16
 let cf _ _ command _ _ w _ =
     ((
         match command with
         | "Buy" ->
-            4426 + 8
+            4422 + 8
         | "Redeem" ->
-            Wallet.size w * 128 + 121791 + 8
+            auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 4990 + 8
         | _ ->
             8
      ) <: nat) |> ret
