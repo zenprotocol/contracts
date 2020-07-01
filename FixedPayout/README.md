@@ -104,8 +104,6 @@ message body which contrains the following data:
 | `Commit`           | `Hash`             | Root hash of the Merkle tree on which the oracle has comitted
 | `Value`            | `UInt64`           | The attested value of the asset (attested by the oracle)
 | `AuditPath`        | `list Hash`        | The audit path from on the Merkle tree from the leaf of the `<asset, value>` pair to the root of the tree.
-| `CWT`              | `String`           | Salt for the Efficient Sparse Merkle Tree algorithm
-| `DefaultHash`      | `Hash`             | Default hash value for the empty leaves in the Merkle tree
 | `Position`         | `String`           | The position of the redeemer - can be either "Bull" or "Bear"
 
 You'll have to provide the contract with an attestation token given by the oracle contract specified in `OracleContractId` which commits to the data specified in `Commit`, `Timestamp`, and `OraclePubKey`.
@@ -119,7 +117,7 @@ and make sure the attested value is outside the price bounds specified in `Price
 For both the Bull and the Bear position you'll also have to make sure that the all the following conditions hold:
 
 1. The specified `Timestamp` is within the time bounds specified in `TimeLow` and `TimeHigh`.
-2. The specified `AuditPath` is valid for the Merkle root specified in `Commit` for the leaf given by the `Ticker` key with the specified `Value`, using `CWT` and `DefaultHash` as the tree parameters.
+2. The specified `AuditPath` is valid for the Merkle root specified in `Commit` for the leaf given by the `Ticker` key with the specified `Value`.
 3. The data in the bet tokens is according to the specified `OraclePubKey`, `OracleContractId`, `Ticker`, `PriceLow`, `PriceHigh`, `TimeLow`, and `TimeHigh`.
 
 When all of those conditions hold (including the conditions which are specific for the position) the contract will
