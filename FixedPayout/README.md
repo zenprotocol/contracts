@@ -100,13 +100,14 @@ message body which contrains the following data:
 | `PriceHigh`        | `UInt64`           | The highest price estimate for the bull position (optional)
 | `TimeLow`          | `UInt64`           | The beginning time of the bet
 | `TimeHigh`         | `UInt64`           | The ending time of the bet (optional)
-| `Timestamp`        | `UInt64`           | Time of the attestion given by the oracle
-| `Commit`           | `Hash`             | Root hash of the Merkle tree on which the oracle has comitted
+| `Timestamp`        | `UInt64`           | Time of the attestion given by the oracle (in milliseconds since Epoch - 00:00:00 UTC, January 1, 1970)
+| `Root`             | `Hash`             | Root hash of the Merkle tree on which the oracle has comitted
 | `Value`            | `UInt64`           | The attested value of the asset (attested by the oracle)
-| `AuditPath`        | `list Hash`        | The audit path from on the Merkle tree from the leaf of the `<asset, value>` pair to the root of the tree.
+| `AuditPath`        | `list Hash`        | The audit path from on the Merkle tree from the leaf of the `<asset, value>` pair to the root of the tree
+| `Index`            | `UInt64`           | The index of the `<asset, value>` pair in the Merkle tree
 | `Position`         | `String`           | The position of the redeemer - can be either "Bull" or "Bear"
 
-You'll have to provide the contract with an attestation token given by the oracle contract specified in `OracleContractId` which commits to the data specified in `Commit`, `Timestamp`, and `OraclePubKey`.
+You'll have to provide the contract with an attestation token given by the oracle contract specified in `OracleContractId` which commits to the data specified in `Root`, `Timestamp`, and `OraclePubKey`.
 
 You'll also have to provide the contract with bet tokens according to the position specified in `Position` -
 to redeem a Bull position provide the contract with Bull tokens ([["Bull", data]]),
@@ -117,7 +118,7 @@ and make sure the attested value is outside the price bounds specified in `Price
 For both the Bull and the Bear position you'll also have to make sure that the all the following conditions hold:
 
 1. The specified `Timestamp` is within the time bounds specified in `TimeLow` and `TimeHigh`.
-2. The specified `AuditPath` is valid for the Merkle root specified in `Commit` for the leaf given by the `Ticker` key with the specified `Value`.
+2. The specified `AuditPath` is valid for the Merkle root specified in `Root` for the leaf given by the `Ticker` key with the specified `Value`.
 3. The data in the bet tokens is according to the specified `OraclePubKey`, `OracleContractId`, `Ticker`, `PriceLow`, `PriceHigh`, `TimeLow`, and `TimeHigh`.
 
 When all of those conditions hold (including the conditions which are specific for the position) the contract will
