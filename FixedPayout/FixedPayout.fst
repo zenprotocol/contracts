@@ -79,8 +79,8 @@ type betEvent = {
     ticker           : ticker;
     priceLow         : U64.t;
     priceHigh        : option U64.t;
-    timeLow          : U64.t;
-    timeHigh         : option U64.t;
+    start            : U64.t;
+    expiry           : option U64.t;
 }
 
 type bet = {
@@ -295,8 +295,8 @@ val getOraclePubKey     : parser publicKey      82
 val getTicker           : parser ticker         94
 val getPriceLow         : parser U64.t          82
 val getPriceHigh        : parser (option U64.t) 77
-val getTimeLow          : parser U64.t          82
-val getTimeHigh         : parser (option U64.t) 77
+val getStart            : parser U64.t          82
+val getExpiry           : parser (option U64.t) 77
 val getAuditPath        : parser auditPath      (auditPathMaxLength * 22 + 139 + 4)
 val getValue            : parser U64.t          82
 val getIndex            : parser U64.t          82
@@ -315,10 +315,10 @@ let getPriceLow         dict = dict |>
     parseField      tryU64       "PriceLow"         "Could not parse PriceLow"
 let getPriceHigh        dict = dict |>
     parseOptField   tryU64       "PriceHigh"
-let getTimeLow          dict = dict |>
-    parseField      tryU64       "TimeLow"          "Could not parse TimeLow"
-let getTimeHigh         dict = dict |>
-    parseOptField   tryU64       "TimeHigh"
+let getStart            dict = dict |>
+    parseField      tryU64       "Start"            "Could not parse Start"
+let getExpiry           dict = dict |>
+    parseOptField   tryU64       "Expiry"
 let getAuditPath        dict = dict |>
     parseAuditPath               "AuditPath"        "Could not parse AuditPath"
 let getValue            dict = dict |>
@@ -381,16 +381,16 @@ let parseEvent dict = // 36
     dict |> getTicker           >>= (fun ticker           -> // 94
     dict |> getPriceLow         >>= (fun priceLow         -> // 82
     dict |> getPriceHigh        >>= (fun priceHigh        -> // 77
-    dict |> getTimeLow          >>= (fun timeLow          -> // 82
-    dict |> getTimeHigh         >>= (fun timeHigh         -> // 77
+    dict |> getStart            >>= (fun start            -> // 82
+    dict |> getExpiry           >>= (fun expiry           -> // 77
         RT.ok ({
             oraclePubKey     = oraclePubKey;
             oracleContractId = oracleContractId;
             ticker           = ticker;
             priceLow         = priceLow;
             priceHigh        = priceHigh;
-            timeLow          = timeLow;
-            timeHigh         = timeHigh;
+            start            = start;
+            expiry           = expiry;
         }))))))))
 
 val parseRedemption': option (Dict.t data) -> result redemption `cost` (1133 + (auditPathMaxLength * 22 + 539))
@@ -451,8 +451,8 @@ let updateEvent bevent s = // 31
     >>= updateTicker            bevent.ticker           // 36
     >>= Sha3.updateU64          bevent.priceLow         // 48
     >>= Sha3.updateU64 `runOpt` bevent.priceHigh        // 53
-    >>= Sha3.updateU64          bevent.timeLow          // 48
-    >>= Sha3.updateU64 `runOpt` bevent.timeHigh         // 53
+    >>= Sha3.updateU64          bevent.start            // 48
+    >>= Sha3.updateU64 `runOpt` bevent.expiry           // 53
 
 val updatePosition : hashUpdate position 28
 let updatePosition position s = // 4
@@ -514,11 +514,11 @@ let inBounds low high value =
 
 val validateTime: redemption -> result redemption `cost` 24
 let validateTime redemption = // 14
-    let  bevent = redemption.bet.bevent            in
-    let  low    = bevent.timeLow                   in
-    let  high   = bevent.timeHigh                  in
-    let  value  = redemption.timestamp             in
-    let! inb    = inBounds low high value          in // 10
+    let  bevent = redemption.bet.bevent   in
+    let  low    = bevent.start            in
+    let  high   = bevent.expiry           in
+    let  value  = redemption.timestamp    in
+    let! inb    = inBounds low high value in // 10
     if inb
         then RT.ok redemption
         else RT.failw "Attestation time is not within the given time bounds"
