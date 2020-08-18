@@ -19,7 +19,7 @@ module Array  = Zen.Array
 module Str    = FStar.String
 module CId    = Zen.ContractId
 module Merkle = Zen.MerkleTree
-module Wallet = Zen.Wallet
+module W      = Zen.Wallet
 
 let auditPathMaxLength : nat = 30
 
@@ -612,8 +612,13 @@ let buy txSkel contractId sender dict = // 10
 -------------------------------------------------------------------------------
 *)
 
-val redeemRedemption': (w:wallet) -> txSkeleton -> contractId -> sender -> redemption
-    -> CR.t `cost` (1075 + (1242 + (64 + (0 + (Zen.Wallet.size w * 128 + 192 + 7) + 64 + 64 + 624 + 3))) + 39)
+val redeemRedemption':
+    (w:wallet)
+    -> txSkeleton
+    -> contractId
+    -> sender
+    -> redemption
+    -> CR.t `cost` (1075 + (1242 + (64 + (0 + 64 + (W.size w * 128 + 192 + 7) + 624 + (W.size w * 128 + 192) + 64 + 3))) + 49)
 let redeemRedemption' w txSkel contractId sender redemption = // 46
     let! betToken         = mkBetToken contractId redemption.bet       in // 1077
     let  oracleContractId = redemption.bet.bevent.oracleContractId     in
@@ -622,36 +627,39 @@ let redeemRedemption' w txSkel contractId sender redemption = // 46
     let! m                = TX.getAvailableTokens betToken txSkel      in // 64
     let open RT in
     ret txSkel
-    >>= (fun tx -> ofOptionT "Insufficient funds" (TX.fromWallet Asset.zenAsset m contractId w tx)) // Wallet.size w * 128 + 192
-    >>= (TX.destroy m   betToken    >> liftCost)                                                    // 64
-    >>= (TX.destroy 1UL attestToken >> liftCost)                                                    // 64
+    >>= (liftCost << TX.destroy m betToken)                                                         // 64
+    >>= (fun tx -> ofOptionT "Insufficient funds" (TX.fromWallet Asset.zenAsset m contractId w tx)) // W.size w * 128 + 192
     >>= lockToSender Asset.zenAsset m sender                                                        // 624
+    >>= (ofOptionT "Attestation token not found" << TX.fromWallet attestToken 1UL contractId w)     // W.size wallet * 128 + 192
+    >>= (liftCost << TX.lockToContract attestToken 1UL contractId)                                  // 64
     >>= CR.ofTxSkel                                                                                 // 3
 
 val redeemRedemption: (w:wallet) -> txSkeleton -> contractId -> sender -> redemption
-    -> CR.t `cost` (Zen.Wallet.size w * 128 + 3381)
+    -> CR.t `cost` (W.size w * 256 + 3583)
 let redeemRedemption w txSkel contractId sender redemption = // 7
     redeemRedemption' w txSkel contractId sender redemption
-    |> (fun x -> x <: CR.t `cost` (Zen.Wallet.size w * 128 + 3374))
+    |> (fun x -> x <: CR.t `cost` (W.size w * 256 + 3576))
 
-val redeem': (w:wallet) -> txSkeleton -> contractId -> sender -> option data -> CR.t `cost`
-    (0 + 15 + (auditPathMaxLength * 22 + 1675) +
-      (auditPathMaxLength * 420 + 213) +
-      (Zen.Wallet.size w * 128 + 3381) +
-      13)
+val redeem':
+    (w:wallet)
+    -> txSkeleton
+    -> contractId
+    -> sender
+    -> option data
+    -> CR.t `cost` (0 + 15 + (auditPathMaxLength * 22 + 1675) + (auditPathMaxLength * 420 + 213) + (W.size w * 256 + 3583) + 13)
 let redeem' w txSkel contractId sender dict = // 13
     let open RT in
     ret dict
     >>= parseDict                                   // 15
     >>= parseRedemption                             // (auditPathMaxLength * 22 + 1675)
     >>= validateRedemption                          // (auditPathMaxLength * 420 + 213)
-    >>= redeemRedemption w txSkel contractId sender // (Zen.Wallet.size w * 128 + 3381)
+    >>= redeemRedemption w txSkel contractId sender // (W.size w * 256 + 3583)
 
 val redeem: (w:wallet) -> txSkeleton -> contractId -> sender
-    -> option data -> CR.t `cost` (auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 5304)
+    -> option data -> CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 5506)
 let redeem w txSkel contractId sender dict = // 7
     redeem' w txSkel contractId sender dict
-    |> (fun x -> x <: CR.t `cost` (auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 5297))
+    |> (fun x -> x <: CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 5499))
 
 
 
@@ -675,7 +683,7 @@ val main:
         | "Buy" ->
             4422 + 8
         | "Redeem" ->
-            auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 5304 + 8
+            auditPathMaxLength * 442 + W.size w * 256 + 5506 + 8
         | _ ->
             8)
 let main txSkel context contractId command sender messageBody w state = // 15
@@ -687,11 +695,11 @@ let main txSkel context contractId command sender messageBody w state = // 15
             | "Buy" ->
                 4422
             | "Redeem" ->
-                auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 5304
+                auditPathMaxLength * 442 + W.size w * 256 + 5506
             | _ ->
                 0)
     | "Redeem" ->
-        redeem w txSkel contractId sender messageBody // auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 5304
+        redeem w txSkel contractId sender messageBody // auditPathMaxLength * 442 + W.size w * 128 + 5304
     | _ ->
         RT.failw "Unsupported command"
 
@@ -710,7 +718,7 @@ let cf _ _ command _ _ w _ =
         | "Buy" ->
             4422 + 8
         | "Redeem" ->
-            auditPathMaxLength * 442 + Zen.Wallet.size w * 128 + 5304 + 8
+            auditPathMaxLength * 442 + W.size w * 256 + 5506 + 8
         | _ ->
             8
      ) <: nat) |> ret
