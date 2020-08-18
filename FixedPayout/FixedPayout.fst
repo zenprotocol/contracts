@@ -578,12 +578,12 @@ let validateRedemption redemption = // 7
 
 (*
 -------------------------------------------------------------------------------
-========== COMMAND: Buy  ======================================================
+========== COMMAND: Issue  ====================================================
 -------------------------------------------------------------------------------
 *)
 
-val buyEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 3705
-let buyEvent txSkel contractId sender bevent = // 48
+val issueEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 3705
+let issueEvent txSkel contractId sender bevent = // 48
     let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1075
     let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1075
     let! m         = TX.getAvailableTokens Asset.zenAsset txSkel              in // 64
@@ -596,13 +596,13 @@ let buyEvent txSkel contractId sender bevent = // 48
     >>= (TX.lockToContract Asset.zenAsset m contractId >> liftCost) // 64
     >>= CR.ofTxSkel                                                 // 3
 
-val buy: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 4422
-let buy txSkel contractId sender dict = // 10
+val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 4422
+let issue txSkel contractId sender dict = // 10
     let open RT in
     ret dict
     >>= parseDict                         // 15
     >>= parseEvent                        // 692
-    >>= buyEvent txSkel contractId sender // 3705
+    >>= issueEvent txSkel contractId sender // 3705
 
 
 
@@ -680,7 +680,7 @@ val main:
     -> state       : option data
     -> CR.t `cost` (
         match command with
-        | "Buy" ->
+        | "Issue" ->
             4422 + 8
         | "Redeem" ->
             auditPathMaxLength * 442 + W.size w * 256 + 5506 + 8
@@ -688,11 +688,11 @@ val main:
             8)
 let main txSkel context contractId command sender messageBody w state = // 15
     match command with
-    | "Buy" ->
-        buy txSkel contractId sender messageBody // 4422
+    | "Issue" ->
+        issue txSkel contractId sender messageBody // 4422
         <: CR.t `cost` (
             match command with
-            | "Buy" ->
+            | "Issue" ->
                 4422
             | "Redeem" ->
                 auditPathMaxLength * 442 + W.size w * 256 + 5506
@@ -715,7 +715,7 @@ val cf:
 let cf _ _ command _ _ w _ =
     ((
         match command with
-        | "Buy" ->
+        | "Issue" ->
             4422 + 8
         | "Redeem" ->
             auditPathMaxLength * 442 + W.size w * 256 + 5506 + 8
