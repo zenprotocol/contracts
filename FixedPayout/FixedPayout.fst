@@ -114,7 +114,7 @@ type redemption = {
 // tries to map a function over a list.
 // if all of the mappings return Some, then returns Some list.
 // otherwise returns None.
-val tryMap(#a #b: Type)(#n: nat):
+val tryMap (#a #b : Type) (#n : nat) :
     (a -> option b `cost` n)
     -> ls:list a
     -> option (ls':list b{length ls' == length ls}) `cost` (length ls * (n + 20) + 20)
@@ -130,7 +130,7 @@ let rec tryMap #a #b #n f ls = //20
         | _ -> OptT.none end
     | [] -> [] |> OptT.incSome (length ls * (n + 20))
 
-let runOpt (#a #s:Type) (#m:nat) (update:a -> s -> s `cost` m) (x:option a) (st:s): s `cost` (m + 5) =
+let runOpt (#a #s:Type) (#m:nat) (update:a -> s -> s `cost` m) (x:option a) (st:s) : s `cost` (m + 5) =
     Opt.maybe (incRet m) update x st
 
 // compress a public key
@@ -600,8 +600,8 @@ val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 4422
 let issue txSkel contractId sender dict = // 10
     let open RT in
     ret dict
-    >>= parseDict                         // 15
-    >>= parseEvent                        // 692
+    >>= parseDict                           // 15
+    >>= parseEvent                          // 692
     >>= issueEvent txSkel contractId sender // 3705
 
 
@@ -612,14 +612,14 @@ let issue txSkel contractId sender dict = // 10
 -------------------------------------------------------------------------------
 *)
 
-val redeemRedemption':
+val redeemRedemption' :
     (w:wallet)
     -> txSkeleton
     -> contractId
     -> sender
     -> redemption
-    -> CR.t `cost` (1075 + (1242 + (64 + (0 + 64 + (W.size w * 128 + 192 + 7) + 624 + (W.size w * 128 + 192) + 64 + 3))) + 49)
-let redeemRedemption' w txSkel contractId sender redemption = // 46
+    -> CR.t `cost` (1075 + (1242 + (64 + (0 + 64 + (W.size w * 128 + 192) + 624 + (W.size w * 128 + 192) + 64 + 3))) + 56)
+let redeemRedemption' w txSkel contractId sender redemption = // 56
     let! betToken         = mkBetToken contractId redemption.bet       in // 1077
     let  oracleContractId = redemption.bet.bevent.oracleContractId     in
     let  attestation      = redemption.attestation                     in
@@ -628,7 +628,7 @@ let redeemRedemption' w txSkel contractId sender redemption = // 46
     let open RT in
     ret txSkel
     >>= (liftCost << TX.destroy m betToken)                                                         // 64
-    >>= (fun tx -> ofOptionT "Insufficient funds" (TX.fromWallet Asset.zenAsset m contractId w tx)) // W.size w * 128 + 192
+    >>= (ofOptionT "Insufficient funds" << TX.fromWallet Asset.zenAsset m contractId w) // W.size w * 128 + 192
     >>= lockToSender Asset.zenAsset m sender                                                        // 624
     >>= (ofOptionT "Attestation token not found" << TX.fromWallet attestToken 1UL contractId w)     // W.size wallet * 128 + 192
     >>= (liftCost << TX.lockToContract attestToken 1UL contractId)                                  // 64
@@ -640,7 +640,7 @@ let redeemRedemption w txSkel contractId sender redemption = // 7
     redeemRedemption' w txSkel contractId sender redemption
     |> (fun x -> x <: CR.t `cost` (W.size w * 256 + 3576))
 
-val redeem':
+val redeem' :
     (w:wallet)
     -> txSkeleton
     -> contractId
@@ -665,6 +665,88 @@ let redeem w txSkel contractId sender dict = // 7
 
 (*
 -------------------------------------------------------------------------------
+========== COMMAND: Cancel ====================================================
+-------------------------------------------------------------------------------
+*)
+
+val cancelEqualTokens :
+  contractId
+  -> (w : wallet)
+  -> sender
+  -> U64.t
+  -> asset
+  -> asset
+  -> txSkeleton
+  -> txSkeleton `RT.t` (0 + (W.size w * 128 + 192) + 624 + 64 + 64 + 27)
+let cancelEqualTokens contractId w sender m bullToken bearToken txSkel = // 27
+    let open RT in
+    ret txSkel
+    >>= (ofOptionT "Insufficient funds" << TX.fromWallet Asset.zenAsset m contractId w) // W.size w * 128 + 192
+    >>= lockToSender Asset.zenAsset m sender                                            // 624
+    >>= (liftCost << TX.destroy m bullToken)                                            // 64
+    >>= (liftCost << TX.destroy m bearToken)                                            // 64
+
+val cancelEvent':
+    (w : wallet)
+    -> contractId
+    -> sender
+    -> txSkeleton
+    -> betEvent
+    -> CR.t `cost` (1075 + (1075 + (64 + (64 + (0 + (W.size w * 128 + 192) + 624 + 64 + 64 + 27 + 3)))) + 45)
+let cancelEvent' w contractId sender txSkel bevent = // 45
+    let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1075
+    let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1075
+    let! mBull     = TX.getAvailableTokens bullToken txSkel                   in // 64
+    let! mBear     = TX.getAvailableTokens bearToken txSkel                   in // 64
+    let open RT in
+    begin if U64.eq mBull mBear then
+        cancelEqualTokens contractId w sender mBull bullToken bearToken txSkel // (0 + (W.size w * 128 + 192) + 624 + 64 + 64 + 27)
+    else
+        "There must be an equal amount of both bull and bear tokens in the transaction"
+        |> incFailw (0 + (W.size w * 128 + 192) + 624 + 64 + 64 + 27)
+    end
+    >>= CR.ofTxSkel // 3
+
+val cancelEvent:
+    (w : wallet)
+    -> contractId
+    -> sender
+    -> txSkeleton
+    -> betEvent
+    -> CR.t `cost` (W.size w * 128 + 3304)
+let cancelEvent w contractId sender txSkel bevent = // 7
+    cancelEvent' w contractId sender txSkel bevent
+    |> (fun x -> x <: CR.t `cost` (W.size w * 128 + 3297))
+
+val cancel'  :
+  (w : wallet)
+  -> contractId
+  -> sender
+  -> txSkeleton
+  -> option data
+  -> CR.t `cost` (0 + 15 + 692 + (W.size w * 128 + 3304) + 11)
+let cancel' w contractId sender txSkel dict = // 11
+    let open RT in
+    ret dict
+    >>= parseDict                              // 15
+    >>= parseEvent                             // 692
+    >>= cancelEvent w contractId sender txSkel // (W.size w * 128 + 3304)
+
+val cancel  :
+  (w : wallet)
+  -> contractId
+  -> sender
+  -> txSkeleton
+  -> option data
+  -> CR.t `cost` (W.size w * 128 + 4029)
+let cancel w contractId sender txSkel dict = // 7
+    cancel' w contractId sender txSkel dict
+    |> (fun x -> x <: CR.t `cost` (W.size w * 128 + 4022))
+
+
+
+(*
+-------------------------------------------------------------------------------
 ========== MAIN ===============================================================
 -------------------------------------------------------------------------------
 *)
@@ -681,12 +763,14 @@ val main:
     -> CR.t `cost` (
         match command with
         | "Issue" ->
-            4422 + 8
+            4422 + 9
         | "Redeem" ->
-            auditPathMaxLength * 442 + W.size w * 256 + 5506 + 8
+            auditPathMaxLength * 442 + W.size w * 256 + 5506 + 9
+        | "Cancel" ->
+            W.size w * 128 + 4029 + 9
         | _ ->
-            8)
-let main txSkel context contractId command sender messageBody w state = // 15
+            9)
+let main txSkel context contractId command sender messageBody w state = // 9
     match command with
     | "Issue" ->
         issue txSkel contractId sender messageBody // 4422
@@ -696,10 +780,14 @@ let main txSkel context contractId command sender messageBody w state = // 15
                 4422
             | "Redeem" ->
                 auditPathMaxLength * 442 + W.size w * 256 + 5506
+            | "Cancel" ->
+                W.size w * 128 + 4029
             | _ ->
                 0)
     | "Redeem" ->
-        redeem w txSkel contractId sender messageBody // auditPathMaxLength * 442 + W.size w * 128 + 5304
+        redeem w txSkel contractId sender messageBody // auditPathMaxLength * 442 + W.size w * 256 + 5506
+    | "Cancel" ->
+        cancel w contractId sender txSkel messageBody // W.size w * 128 + 4027
     | _ ->
         RT.failw "Unsupported command"
 
@@ -711,14 +799,16 @@ val cf:
     -> messageBody: option data
     -> w          : wallet
     -> state      : option data
-    -> nat `cost` 16
+    -> nat `cost` 17
 let cf _ _ command _ _ w _ =
     ((
         match command with
         | "Issue" ->
-            4422 + 8
+            4422 + 9
         | "Redeem" ->
-            auditPathMaxLength * 442 + W.size w * 256 + 5506 + 8
+            auditPathMaxLength * 442 + W.size w * 256 + 5506 + 9
+        | "Cancel" ->
+            W.size w * 128 + 4029 + 9
         | _ ->
-            8
+            9
      ) <: nat) |> ret
