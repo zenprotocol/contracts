@@ -57,8 +57,8 @@ To issue a new bet - execute the contract with the `Issue` command while providi
 | `Ticker`           | `String`           | The name of the asset on which the bet is based
 | `PriceLow`         | `UInt64`           | The lowest price estimate for the Bull position
 | `PriceHigh`        | `UInt64`           | The highest price estimate for the Bull position (optional)
-| `TimeLow`          | `UInt64`           | The beginning time of the bet
-| `TimeHigh`         | `UInt64`           | The ending time of the bet (optional)
+| `Start`            | `UInt64`           | The beginning time of the bet
+| `Expiry`           | `UInt64`           | The ending time of the bet (optional)
 
 The contract will lock to itself all the ZPs supplied to it in the TX by the issuer and will mint and lock to the issuer the same amount of bet tokens of both kinds (so if the issuer supplies the contract with `m` ZPs - the contract will mint and lock to the issuer `m` Bear tokens and `m` Bull tokens).
 
@@ -83,8 +83,8 @@ To redeem a bet token - execute the contract with the `Redeem` command while pro
 | `Ticker`           | `String`           | The name of the asset on which the bet is based
 | `PriceLow`         | `UInt64`           | The lowest price estimate for the bull position
 | `PriceHigh`        | `UInt64`           | The highest price estimate for the bull position (optional)
-| `TimeLow`          | `UInt64`           | The beginning time of the bet
-| `TimeHigh`         | `UInt64`           | The ending time of the bet (optional)
+| `Start`            | `UInt64`           | The beginning time of the bet
+| `Expiry`           | `UInt64`           | The ending time of the bet (optional)
 | `Timestamp`        | `UInt64`           | Time of the attestion given by the oracle (in milliseconds since Epoch - 00:00:00 UTC, January 1, 1970)
 | `Root`             | `Hash`             | Root hash of the Merkle tree on which the oracle has comitted
 | `Value`            | `UInt64`           | The attested value of the asset (attested by the oracle)
@@ -98,11 +98,11 @@ You'll also have to provide the contract with bet tokens according to the positi
 
 For both the Bull and the Bear position you'll also have to make sure that the all the following conditions hold:
 
-1. The specified `Timestamp` is within the time bounds specified in `TimeLow` and `TimeHigh`.
+1. The specified `Timestamp` is within the time bounds specified in `Start` and `Expiry`.
 
 2. The specified `AuditPath` is valid for the Merkle root specified in `Root` for the leaf given by the `Ticker` key with the specified `Value` in the specified `Index`.
 
-3. The data in the bet tokens is according to the specified `OraclePubKey`, `OracleContractId`, `Ticker`, `PriceLow`, `PriceHigh`, `TimeLow`, and `TimeHigh`.
+3. The data in the bet tokens is according to the specified `OraclePubKey`, `OracleContractId`, `Ticker`, `PriceLow`, `PriceHigh`, `Start`, and `Expiry`.
 
 When all of those conditions hold (including the conditions which are specific for the position) the contract will destroy the provided tokens and lock ZPs to the sender of the same amount as the provided bet tokens of the specified position.
 
