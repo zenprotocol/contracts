@@ -477,8 +477,8 @@ run_test "valid data & 100 kalapas but no sender"
             Input.Context.empty
             |> Input.Context.realize fpcRealizer
          command     =
-             CMD_Issue
-             |> realizeCommand
+            CMD_Issue
+            |> realizeCommand
          sender      =
             Abs.AbsAnonymousSender
             |> Input.Sender.realize fpcRealizer
@@ -504,4 +504,1590 @@ run_test "valid data & 100 kalapas but no sender"
          state       =
             None
     } |> should_FAIL_with "Sender can't be anonymous"
+    end
+
+
+
+(*
+------------------------------------------------------------------------------------------------------------------------
+======================================== COMMAND: "Redeem" =============================================================
+------------------------------------------------------------------------------------------------------------------------
+*)
+
+printfn "\n\n======================================== Redeem ========================================================================"
+
+let beventBull = {
+    oraclePubKey     = PK_Oracle
+    oracleContractId = CID_Oracle
+    ticker           = ProofData.ticker
+    priceLow         = ProofData.price - 10UL
+    priceHigh        = Some (ProofData.price + 10UL)
+    start            = ProofData.timestamp - 10UL
+    expiry           = Some (ProofData.timestamp + 10UL)
+}
+
+let beventBear = {
+    oraclePubKey     = PK_Oracle
+    oracleContractId = CID_Oracle
+    ticker           = ProofData.ticker
+    priceLow         = ProofData.price + 10UL
+    priceHigh        = Some (ProofData.price + 20UL)
+    start            = ProofData.timestamp - 10UL
+    expiry           = Some (ProofData.timestamp + 10UL)
+}
+
+let commit001 = {
+    c_root       = ProofData.root
+    c_timestamp  = ProofData.timestamp
+}
+
+let attest001 = {
+    commit = commit001
+    pubKey = PK_Oracle
+}
+
+let proof001 = {
+    key         = ProofData.ticker;
+    value       = ProofData.price;
+    root        = ProofData.root;
+    auditPath   = ProofData.path;
+    index       = ProofData.index;
+}
+
+run_test <- Execute.init_testing_environment()
+
+run_test "valid Bull redemption (100 ZP)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasInput  (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BullToken beventBull)) (Some 100UL)
+            ; hasInput  (Some <| Abs.AbsContract (Abs.OtherContract CID_Oracle)) (Some <| AttestToken attest001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Redeemer) (Some ZenToken) (Some 100UL)
+            ]
+            fpcRealizer
+    end
+
+run_test "valid Bear redemption (100 ZP)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+            }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasInput  (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BearToken beventBear)) (Some 100UL)
+            ; hasInput  (Some <| Abs.AbsContract (Abs.OtherContract CID_Oracle)) (Some <| AttestToken attest001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Redeemer) (Some ZenToken) (Some 100UL)
+            ]
+            fpcRealizer
+    end
+
+run_test "Bull redemption (100 ZP) with empty wallet"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsContract (Abs.OtherContract CID_Oracle)) (AttestToken attest001) 1UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+            }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient funds"
+    end
+
+run_test "Bear redemption (100 ZP) with empty wallet"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsContract (Abs.OtherContract CID_Oracle)) (AttestToken attest001) 1UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                   _Timestamp        = Some ProofData.timestamp
+                   _Root             = Some ProofData.root
+                   _OraclePubKey     = Some PK_Oracle
+                   _Ticker           = Some ProofData.ticker
+                   _PriceLow         = Some beventBear.priceLow
+                   _PriceHigh        = beventBear.priceHigh
+                   _Start            = Some beventBear.start
+                   _Expiry           = beventBear.expiry
+                   _AuditPath        = Some ProofData.path
+                   _Value            = Some ProofData.price
+                   _Index            = Some ProofData.index
+                   _Position         = Some "Bear"
+                   _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient funds"
+    end
+
+run_test "wrong position"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Position doesn't match the event"
+    end
+
+run_test "wrong token"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+        txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+        context     =
+           Input.Context.empty
+           |> Input.Context.realize fpcRealizer
+        command     =
+           CMD_Redeem
+           |> realizeCommand
+        sender      =
+           Abs.AbsPKSender PK_Redeemer
+           |> Input.Sender.realize fpcRealizer
+        messageBody =
+           realizeData {
+                 _Timestamp        = Some ProofData.timestamp
+                 _Root             = Some ProofData.root
+                 _OraclePubKey     = Some PK_Oracle
+                 _Ticker           = Some ProofData.ticker
+                 _PriceLow         = Some beventBear.priceLow
+                 _PriceHigh        = beventBear.priceHigh
+                 _Start            = Some beventBear.start
+                 _Expiry           = beventBear.expiry
+                 _AuditPath        = Some ProofData.path
+                 _Value            = Some ProofData.price
+                 _Index            = Some ProofData.index
+                 _Position         = Some "Bear"
+                 _OracleContractId = Some CID_Oracle
+           }
+        wallet      =
+           Input.Wallet.empty
+           |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+           |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+           |> Input.Wallet.realize fpcRealizer
+        state       =
+           None
+   } |> should_FAIL_with "Insufficient funds"
+    end
+
+let beventBull_out_of_time = {
+    oraclePubKey     = PK_Oracle
+    oracleContractId = CID_Oracle
+    ticker           = ProofData.ticker
+    priceLow         = ProofData.price - 10UL
+    priceHigh        = Some (ProofData.price + 10UL)
+    start            = ProofData.timestamp + 10UL
+    expiry           = Some (ProofData.timestamp + 20UL)
+}
+
+run_test "out of time Bull"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull_out_of_time)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull_out_of_time.priceLow
+                  _PriceHigh        = beventBull_out_of_time.priceHigh
+                  _Start            = Some beventBull_out_of_time.start
+                  _Expiry           = beventBull_out_of_time.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Attestation time is not within the given time bounds"
+    end
+
+let beventBear_out_of_time = {
+    oraclePubKey     = PK_Oracle
+    oracleContractId = CID_Oracle
+    ticker           = ProofData.ticker
+    priceLow         = ProofData.price + 10UL
+    priceHigh        = Some (ProofData.price + 20UL)
+    start            = ProofData.timestamp + 10UL
+    expiry           = Some (ProofData.timestamp + 20UL)
+}
+
+run_test "out of time Bear"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear_out_of_time)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear_out_of_time.priceLow
+                  _PriceHigh        = beventBear_out_of_time.priceHigh
+                  _Start            = Some beventBear_out_of_time.start
+                  _Expiry           = beventBear_out_of_time.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Attestation time is not within the given time bounds"
+    end
+
+run_test "missing Timestamp (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = None
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Timestamp"
+    end
+
+run_test "missing Root (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = None
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Root"
+    end
+
+run_test "missing OraclePubKey (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = None
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse OraclePubKey"
+    end
+
+run_test "missing Ticker (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = None
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Ticker"
+    end
+
+run_test "missing PriceLow (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = None
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse PriceLow"
+    end
+
+run_test "missing PriceHigh (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = None
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient funds"
+    end
+
+run_test "missing Start (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = None
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Start"
+    end
+
+run_test "missing Expiry (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = None
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient funds"
+    end
+
+run_test "missing AuditPath (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = None
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse AuditPath"
+    end
+
+run_test "missing Value (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = None
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Value"
+    end
+
+run_test "missing Position (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = None
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Position"
+    end
+
+run_test "missing OracleContractId (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = None
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse OracleContractId"
+    end
+
+run_test "missing attestion token (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Attestation token not found"
+    end
+
+run_test "missing bet token (Bull)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient funds"
+    end
+
+run_test "missing Timestamp (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = None
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Timestamp"
+    end
+
+run_test "missing Root (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = None
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Root"
+    end
+
+run_test "missing OraclePubKey (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = None
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse OraclePubKey"
+    end
+
+run_test "missing Ticker (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = None
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Ticker"
+    end
+
+run_test "missing PriceLow (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = None
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse PriceLow"
+    end
+
+run_test "missing PriceHigh (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = None
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient funds"
+    end
+
+run_test "missing Start (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = None
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Start"
+    end
+
+run_test "missing Expiry (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = None
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient funds"
+    end
+
+run_test "missing AuditPath (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = None
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse AuditPath"
+    end
+
+run_test "missing Value (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = None
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Value"
+    end
+
+run_test "missing Position (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = None
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Position"
+    end
+
+run_test "missing OracleContractId (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = None
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse OracleContractId"
+    end
+
+run_test "missing attestion token (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Attestation token not found"
+    end
+
+run_test "missing bet token (Bear)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient funds"
     end
