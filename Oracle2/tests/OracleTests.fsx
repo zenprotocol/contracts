@@ -152,3 +152,193 @@ and realizeData (data : ocData) =
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
+
+
+
+(*
+------------------------------------------------------------------------------------------------------------------------
+======================================== DATA ==========================================================================
+------------------------------------------------------------------------------------------------------------------------
+*)
+
+let fromString s =
+    match Consensus.Hash.fromString s with
+    | Ok x -> Consensus.Hash.bytes x
+    | Error err -> failwithf "%s - %s" err s
+
+let commit001 = {
+    commit = fromString "3e47241505bca37f3356fd8dda544c2a3c9c043601f147ea0c6da1362c85a472" |> Hash.Hash
+    pubKey = PK_Oracle
+}
+
+let commit002 = {
+    commit = fromString "3e47241505bca37f3356fd8dda544c2a3c9c043601f147ea0c6da1362c85a472" |> Hash.Hash
+    pubKey = PK_Other
+}
+
+(*
+------------------------------------------------------------------------------------------------------------------------
+======================================== COMMAND: "Commit" =============================================================
+------------------------------------------------------------------------------------------------------------------------
+*)
+
+printfn "\n\n======================================== Commit ========================================================================"
+
+let mutable run_test = Execute.init_testing_environment()
+
+run_test "valid commit - no OraclePubKey"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Commit
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Oracle
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = None
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "valid commit - same OraclePubKey"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Commit
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Oracle
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some commit001.pubKey
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "valid commit - other OraclePubKey"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Commit
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Oracle
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit002.commit
+                  _OraclePubKey = Some commit002.pubKey
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "invalid commit - no Commit field"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Commit
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Oracle
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = None
+                  _OraclePubKey = Some commit001.pubKey
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Commit"
+    end
+
+run_test "invalid commit - no sender"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Commit
+            |> realizeCommand
+         sender      =
+            Abs.AbsAnonymousSender
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some commit001.pubKey
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Sender must be a public key"
+    end
