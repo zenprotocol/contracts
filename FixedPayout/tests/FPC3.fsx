@@ -2091,3 +2091,239 @@ run_test "missing bet token (Bear)"
             None
     } |> should_FAIL_with "Insufficient funds"
     end
+
+
+
+(*
+------------------------------------------------------------------------------------------------------------------------
+======================================== COMMAND: "Cancel" ==============================================================
+------------------------------------------------------------------------------------------------------------------------
+*)
+
+printfn "\n\n======================================== Cancel ========================================================================"
+
+run_test <- Execute.init_testing_environment()
+
+run_test "empty data & empty Tx"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Cancel
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Issuer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            None
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Data parsing failed - the message body is empty"
+    end
+
+run_test "empty data & 100 kalapas"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken bevent001)) 100UL
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken bevent001)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Cancel
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Issuer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            None
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Data parsing failed - the message body is empty"
+    end
+
+run_test "empty data & empty Tx"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Cancel
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Issuer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                 _Timestamp        = None
+                 _Root             = None
+                 _OraclePubKey     = None
+                 _Ticker           = None
+                 _PriceLow         = None
+                 _PriceHigh        = None
+                 _Start            = None
+                 _Expiry           = None
+                 _AuditPath        = None
+                 _Value            = None
+                 _Index            = None
+                 _Position         = None
+                 _OracleContractId = None
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse OraclePubKey"
+    end
+
+run_test "valid data & empty Tx"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Cancel
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Issuer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                 _Timestamp        = None
+                 _Root             = None
+                 _OraclePubKey     = Some PK_Oracle
+                 _Ticker           = Some "USD"
+                 _PriceLow         = Some 123UL
+                 _PriceHigh        = None
+                 _Start            = Some 123UL
+                 _Expiry           = None
+                 _AuditPath        = None
+                 _Value            = None
+                 _Index            = None
+                 _Position         = None
+                 _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient funds"
+    end
+
+run_test "valid data & 100 kalapas"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken bevent001)) 100UL
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken bevent001)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Cancel
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Issuer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                 _Timestamp        = None
+                 _Root             = None
+                 _OraclePubKey     = Some PK_Oracle
+                 _Ticker           = Some "USD"
+                 _PriceLow         = Some 123UL
+                 _PriceHigh        = None
+                 _Start            = Some 123UL
+                 _Expiry           = None
+                 _AuditPath        = None
+                 _Value            = None
+                 _Index            = None
+                 _Position         = None
+                 _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasInput  (Some <| Abs.AbsPK PK_Issuer) (Some <| ZenToken) (Some 100UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Issuer) (Some <| ZenToken) (Some 100UL)
+            ; hasInput (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BearToken bevent001)) (Some 100UL)
+            ; hasInput (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BullToken bevent001)) (Some 100UL)
+            ]
+            fpcRealizer
+    end
+
+run_test "valid data & 100 kalapas but no sender"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken bevent001)) 100UL
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken bevent001)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Cancel
+            |> realizeCommand
+         sender      =
+            Abs.AbsAnonymousSender
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                 _Timestamp        = None
+                 _Root             = None
+                 _OraclePubKey     = Some PK_Oracle
+                 _Ticker           = Some "USD"
+                 _PriceLow         = Some 123UL
+                 _PriceHigh        = None
+                 _Start            = Some 123UL
+                 _Expiry           = None
+                 _AuditPath        = None
+                 _Value            = None
+                 _Index            = None
+                 _Position         = None
+                 _OracleContractId = Some CID_Oracle
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Sender can't be anonymous"
+    end
