@@ -342,3 +342,310 @@ run_test "invalid commit - no sender"
             None
     } |> should_FAIL_with "Sender must be a public key"
     end
+
+
+
+(*
+------------------------------------------------------------------------------------------------------------------------
+======================================== COMMAND: "Attest" =============================================================
+------------------------------------------------------------------------------------------------------------------------
+*)
+
+printfn "\n\n======================================== Attest ========================================================================"
+
+run_test <- Execute.init_testing_environment()
+
+run_test "valid attest - no recipient (attestation token should be sent to sender)"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some PK_Oracle
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit001, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| AttestToken commit001) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "valid attest - recipient is sender"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some PK_Oracle
+                  _Recipient    = Some (Abs.AbsPK PK_Other)
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit001, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| AttestToken commit001) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "valid attest - recipient is PK"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some PK_Oracle
+                  _Recipient    = Some (Abs.AbsPK PK_Oracle)
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit001, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Oracle) (Some <| AttestToken commit001) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "valid attest - recipient is contract"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some PK_Oracle
+                  _Recipient    = Some (Abs.AbsContract <| Abs.OtherContract CID_Other)
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit001, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit001) (Some 1UL)
+            ; hasOutput (Some <| (Abs.AbsContract <| Abs.OtherContract CID_Other)) (Some <| AttestToken commit001) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "invalid attest - no Commit"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = None
+                  _OraclePubKey = Some PK_Oracle
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit001, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Couldn't find Commit in message body"
+    end
+
+run_test "invalid attest - no OraclePubKey"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = None
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit001, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Couldn't find OraclePubKey in message body"
+    end
+
+run_test "valid attest - no recipient and anonymous sender"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsAnonymousSender
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some PK_Oracle
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit001, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Unspecified recipient"
+    end
+
+run_test "invalid attest - no commit token"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some PK_Oracle
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not spend from wallet"
+    end
+
+run_test "invalid attest - wrong commit token"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some PK_Oracle
+                  _Recipient    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not spend from wallet"
+    end
