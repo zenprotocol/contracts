@@ -278,16 +278,14 @@ let parseAsset fieldName dict = // 5
     let open RT in
     parseOptField tryString fieldName dict >>= // 73
     begin fun s -> match s with
-    | Some s -> // 14
-        if Str.length s = 136 then
-                s
-                |> Asset.parse // 64
-                |> RT.ofOptionT "The given asset is not a valid asset"
-            else
-                RT.incFailw 64 "Asset must be 136 characters long"
+    | Some s -> // 11
+        s
+        |> Asset.parse // 64
+        |> RT.ofOptionT "The given asset is not a valid asset"
+        |> inc 3
     | None ->
         Asset.zenAsset
-        |> RT.incRet 64
+        |> RT.incRet 67
     end
 
 val getTimestamp        : parser U64.t          82
