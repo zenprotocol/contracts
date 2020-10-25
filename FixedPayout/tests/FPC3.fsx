@@ -53,9 +53,10 @@ type fpcData = {
     _Index            : uint64            option;
     _Position         : string            option;
     _OracleContractId : fpcCid            option;
+    _Collateral       : fpcAsset          option;
 }
 
-type proof = {
+and proof = {
     key         : string;
     value       : uint64;
     root        : Types.Hash;
@@ -63,17 +64,17 @@ type proof = {
     index       : uint64;
 }
 
-type commit = {
+and commit = {
     c_root      : Types.Hash;
     c_timestamp : uint64;
 }
 
-type attestation = {
+and attestation = {
     commit : commit;
     pubKey : fpcPK;
 }
 
-type betEvent = {
+and betEvent = {
     oraclePubKey     : fpcPK;
     oracleContractId : fpcCid;
     ticker           : string;
@@ -81,13 +82,14 @@ type betEvent = {
     priceHigh        : uint64 option;
     start            : uint64;
     expiry           : uint64 option;
+    collateral       : fpcAsset;
 }
 
-type betToken =
+and betToken =
     | BullToken of betEvent
     | BearToken of betEvent
 
-type fpcAsset =
+and fpcAsset =
     | BetToken of betToken
     | AttestToken of attestation
     | ZenToken
@@ -128,6 +130,7 @@ let FIELD_INDEX              = "Index"B
 let FIELD_VALUE              = "Value"B
 let FIELD_POSITION           = "Position"B
 let FIELD_ORACLE_CONTRACT_ID = "OracleContractId"B
+let FIELD_COLLATERAL         = "Collateral"B
 
 
 
@@ -185,7 +188,7 @@ let runOpt update ox st =
     | Some x -> update x st |> Zen.Cost.Realized.__force
     | None   -> st
 
-let updateEvent bevent s =
+let rec updateEvent bevent s =
     s
     |> updatePublicKey      (bevent.oraclePubKey     |> realizePK           )
     |> updateContractId     (bevent.oracleContractId |> realizeContract     )
@@ -194,13 +197,14 @@ let updateEvent bevent s =
     |> runOpt Sha3.updateU64 bevent.priceHigh
     |> Sha3.updateU64        bevent.start                                     |> Zen.Cost.Realized.__force
     |> runOpt Sha3.updateU64 bevent.expiry
+    |> Sha3.updateAsset      (bevent.collateral |> realizeAsset |> Option.get |> fun (Types.Asset (Types.ContractId(v, Consensus.Hash.Hash cid),Consensus.Hash.Hash h)) -> (v,cid,h)) |> Zen.Cost.Realized.__force
 
-let updateString str s =
+and updateString str s =
     s
     |> Sha3.updateString (ZFStar.fsToFstString str)
     |> Zen.Cost.Realized.__force
 
-let hashBet btoken =
+and hashBet btoken =
     Sha3.empty |>
     (match btoken with
     | BullToken bevent -> updateEvent bevent >> updateString "Bull"
@@ -210,13 +214,13 @@ let hashBet btoken =
     |> Zen.Cost.Realized.__force
     |> Some
 
-let hashCommit commit =
+and hashCommit commit =
     Sha3.empty
     |> Sha3.updateHash (commit.c_root |> Hash.bytes) |> Zen.Cost.Realized.__force
     |> Sha3.updateU64  commit.c_timestamp            |> Zen.Cost.Realized.__force
     |> Sha3.finalize                                 |> Zen.Cost.Realized.__force
 
-let hashAttest attest =
+and hashAttest attest =
     Sha3.empty
     |> Sha3.updateHash
         (Sha3.empty
@@ -227,7 +231,7 @@ let hashAttest attest =
     |> Zen.Cost.Realized.__force
     |> Sha3.finalize |> Zen.Cost.Realized.__force
 
-let realizeAsset asset : Option<Types.Asset> =
+and realizeAsset asset : Option<Types.Asset> =
     let (|@>) x f = Option.map f x
     match asset with
     | BetToken btoken ->
@@ -265,6 +269,7 @@ and realizeData (data : fpcData) =
     |> AddInput.add_uint64         FIELD_INDEX              data._Index
     |> AddInput.add_string         FIELD_POSITION           data._Position
     |> AddRealized.add_contract rl FIELD_ORACLE_CONTRACT_ID data._OracleContractId
+    |> AddInput.add_string         FIELD_COLLATERAL         (data._Collateral |> Option.bind realizeAsset |> Option.map Consensus.Asset.toString)
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
@@ -362,6 +367,7 @@ run_test "empty dictionary & empty Tx"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = None
+                 _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -401,6 +407,7 @@ run_test "valid data & empty Tx"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
+                 _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -418,6 +425,7 @@ let bevent001 = {
     priceHigh        = None//: uint64 option;
     start            = 123UL//: uint64;
     expiry           = None//: uint64 option;
+    collateral       = ZenToken
 }
 
 run_test "valid data & 100 kalapas"
@@ -451,6 +459,7 @@ run_test "valid data & 100 kalapas"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
+                 _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -497,6 +506,7 @@ run_test "valid data & 100 kalapas but no sender"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
+                 _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -524,6 +534,7 @@ let beventBull = {
     priceHigh        = Some (ProofData.price + 10UL)
     start            = ProofData.timestamp - 10UL
     expiry           = Some (ProofData.timestamp + 10UL)
+    collateral       = ZenToken
 }
 
 let beventBear = {
@@ -534,6 +545,7 @@ let beventBear = {
     priceHigh        = Some (ProofData.price + 20UL)
     start            = ProofData.timestamp - 10UL
     expiry           = Some (ProofData.timestamp + 10UL)
+    collateral       = ZenToken
 }
 
 let commit001 = {
@@ -587,6 +599,7 @@ run_test "valid Bull redemption (100 ZP)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -634,6 +647,7 @@ run_test "valid Bear redemption (100 ZP)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
             }
          wallet      =
             Input.Wallet.empty
@@ -682,6 +696,7 @@ run_test "Bull redemption (100 ZP) with empty wallet"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
             }
          wallet      =
             Input.Wallet.empty
@@ -723,6 +738,7 @@ run_test "Bear redemption (100 ZP) with empty wallet"
                    _Index            = Some ProofData.index
                    _Position         = Some "Bear"
                    _OracleContractId = Some CID_Oracle
+                   _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -763,6 +779,7 @@ run_test "wrong position"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -805,6 +822,7 @@ run_test "wrong token"
                  _Index            = Some ProofData.index
                  _Position         = Some "Bear"
                  _OracleContractId = Some CID_Oracle
+                 _Collateral       = None
            }
         wallet      =
            Input.Wallet.empty
@@ -824,6 +842,7 @@ let beventBull_out_of_time = {
     priceHigh        = Some (ProofData.price + 10UL)
     start            = ProofData.timestamp + 10UL
     expiry           = Some (ProofData.timestamp + 20UL)
+    collateral       = ZenToken
 }
 
 run_test "out of time Bull"
@@ -857,6 +876,7 @@ run_test "out of time Bull"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -876,6 +896,7 @@ let beventBear_out_of_time = {
     priceHigh        = Some (ProofData.price + 20UL)
     start            = ProofData.timestamp + 10UL
     expiry           = Some (ProofData.timestamp + 20UL)
+    collateral       = ZenToken
 }
 
 run_test "out of time Bear"
@@ -909,6 +930,7 @@ run_test "out of time Bear"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -951,6 +973,7 @@ run_test "missing Timestamp (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -993,6 +1016,7 @@ run_test "missing Root (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1035,6 +1059,7 @@ run_test "missing OraclePubKey (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1077,6 +1102,7 @@ run_test "missing Ticker (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1119,6 +1145,7 @@ run_test "missing PriceLow (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1161,6 +1188,7 @@ run_test "missing PriceHigh (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1203,6 +1231,7 @@ run_test "missing Start (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1245,6 +1274,7 @@ run_test "missing Expiry (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1287,6 +1317,7 @@ run_test "missing AuditPath (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1329,6 +1360,7 @@ run_test "missing Value (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1371,6 +1403,7 @@ run_test "missing Position (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = None
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1413,6 +1446,7 @@ run_test "missing OracleContractId (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = None
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1455,6 +1489,7 @@ run_test "missing attestion token (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1495,6 +1530,7 @@ run_test "missing bet token (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1537,6 +1573,7 @@ run_test "missing Timestamp (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1579,6 +1616,7 @@ run_test "missing Root (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1621,6 +1659,7 @@ run_test "missing OraclePubKey (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1663,6 +1702,7 @@ run_test "missing Ticker (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1705,6 +1745,7 @@ run_test "missing PriceLow (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1747,6 +1788,7 @@ run_test "missing PriceHigh (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1789,6 +1831,7 @@ run_test "missing Start (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1831,6 +1874,7 @@ run_test "missing Expiry (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1873,6 +1917,7 @@ run_test "missing AuditPath (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1915,6 +1960,7 @@ run_test "missing Value (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1957,6 +2003,7 @@ run_test "missing Position (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = None
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -1999,6 +2046,7 @@ run_test "missing OracleContractId (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = None
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -2041,6 +2089,7 @@ run_test "missing attestion token (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -2081,6 +2130,7 @@ run_test "missing bet token (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
+                  _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -2188,6 +2238,7 @@ run_test "empty data & empty Tx"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = None
+                 _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -2228,6 +2279,7 @@ run_test "valid data & empty Tx"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
+                 _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -2270,6 +2322,7 @@ run_test "valid data & 100 kalapas"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
+                 _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
@@ -2318,6 +2371,7 @@ run_test "valid data & 100 kalapas but no sender"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
+                 _Collateral       = None
              }
          wallet      =
             Input.Wallet.empty
