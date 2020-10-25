@@ -109,6 +109,8 @@ let PK_OTHER    = generatePublicKey()
 
 let fpcMain, fpcCost = Load.extractMainAndCost "output/FixedPayout.dll"
 
+let OTHER_TOKEN_STRING = "00000000f24db32aa1881956646d3ccbb647df71455de10cf98b635810e8870906a56b63"
+
 
 
 (*
@@ -241,7 +243,9 @@ and realizeAsset asset : Option<Types.Asset> =
     | ZenToken ->
         Some Consensus.Asset.Zen
     | OtherToken ->
-        failwith "not implemented yet"
+        OTHER_TOKEN_STRING
+        |> Consensus.Asset.fromString
+
 
 let rec fpcRealizer : Abs.Realizer<fpcPK, fpcCid, fpcAsset, fpcCommand, fpcData> =
     {
@@ -428,6 +432,8 @@ let bevent001 = {
     collateral       = ZenToken
 }
 
+let bevent002 = { bevent001 with collateral = OtherToken }
+
 run_test "valid data & 100 kalapas"
     begin
     Input.feedContract fpcMain CONTRACT_ID_FP {
@@ -471,6 +477,57 @@ run_test "valid data & 100 kalapas"
             ; hasMint (Some <| BetToken (BearToken bevent001)) (Some 100UL)
             ; hasOutput (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BearToken bevent001)) (Some 100UL)
             ; hasOutput (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BullToken bevent001)) (Some 100UL)
+            ; hasInput  (Some <| Abs.AbsPK PK_Issuer) (Some <| ZenToken) (Some 100UL)
+            ; hasOutput  (Some <| Abs.AbsContract Abs.ThisContract) (Some <| ZenToken) (Some 100UL)
+            ]
+            fpcRealizer
+    end
+
+run_test "valid data & 100 non-zen asset"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) OtherToken 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Issue
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Issuer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                 _Timestamp        = None
+                 _Root             = None
+                 _OraclePubKey     = Some PK_Oracle
+                 _Ticker           = Some "USD"
+                 _PriceLow         = Some 123UL
+                 _PriceHigh        = None
+                 _Start            = Some 123UL
+                 _Expiry           = None
+                 _AuditPath        = None
+                 _Value            = None
+                 _Index            = None
+                 _Position         = None
+                 _OracleContractId = Some CID_Oracle
+                 _Collateral       = Some OtherToken
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| BetToken (BullToken bevent002)) (Some 100UL)
+            ; hasMint (Some <| BetToken (BearToken bevent002)) (Some 100UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BearToken bevent002)) (Some 100UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BullToken bevent002)) (Some 100UL)
+            ; hasInput  (Some <| Abs.AbsPK PK_Issuer) (Some <| OtherToken) (Some 100UL)
+            ; hasOutput  (Some <| Abs.AbsContract Abs.ThisContract) (Some <| OtherToken) (Some 100UL)
             ]
             fpcRealizer
     end
@@ -660,6 +717,102 @@ run_test "valid Bear redemption (100 ZP)"
             [ hasInput  (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BearToken beventBear)) (Some 100UL)
             ; hasInput  (Some <| Abs.AbsContract (Abs.OtherContract CID_Oracle)) (Some <| AttestToken attest001) (Some 1UL)
             ; hasOutput (Some <| Abs.AbsPK PK_Redeemer) (Some ZenToken) (Some 100UL)
+            ]
+            fpcRealizer
+    end
+
+run_test "valid Bull redemption (100 other token)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken {beventBull with collateral = OtherToken})) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+             realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBull.priceLow
+                  _PriceHigh        = beventBull.priceHigh
+                  _Start            = Some beventBull.start
+                  _Expiry           = beventBull.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bull"
+                  _OracleContractId = Some CID_Oracle
+                  _Collateral       = Some OtherToken
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, OtherToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasInput  (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BullToken {beventBull with collateral = OtherToken})) (Some 100UL)
+            ; hasInput  (Some <| Abs.AbsContract (Abs.OtherContract CID_Oracle)) (Some <| AttestToken attest001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Redeemer) (Some OtherToken) (Some 100UL)
+            ]
+            fpcRealizer
+    end
+
+run_test "valid Bear redemption (100 other token)"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken {beventBear with collateral = OtherToken})) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Redeem
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Redeemer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                  _Timestamp        = Some ProofData.timestamp
+                  _Root             = Some ProofData.root
+                  _OraclePubKey     = Some PK_Oracle
+                  _Ticker           = Some ProofData.ticker
+                  _PriceLow         = Some beventBear.priceLow
+                  _PriceHigh        = beventBear.priceHigh
+                  _Start            = Some beventBear.start
+                  _Expiry           = beventBear.expiry
+                  _AuditPath        = Some ProofData.path
+                  _Value            = Some ProofData.price
+                  _Index            = Some ProofData.index
+                  _Position         = Some "Bear"
+                  _OracleContractId = Some CID_Oracle
+                  _Collateral       = Some OtherToken
+            }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, OtherToken, 100UL)
+            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasInput  (Some <| Abs.AbsPK PK_Issuer) (Some <| BetToken (BearToken {beventBear with collateral = OtherToken})) (Some 100UL)
+            ; hasInput  (Some <| Abs.AbsContract (Abs.OtherContract CID_Oracle)) (Some <| AttestToken attest001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Redeemer) (Some OtherToken) (Some 100UL)
             ]
             fpcRealizer
     end
