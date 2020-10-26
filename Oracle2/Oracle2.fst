@@ -12,8 +12,6 @@ module Sha3 = Zen.Hash.Sha3
 module TX = Zen.TxSkeleton
 module W = Zen.Wallet
 
-
-
 type commitData =
     { commit       : hash
     ; oraclePubKey : publicKey
@@ -102,43 +100,49 @@ let senderToLock sender = // 15
         |> incRet 536
     end
 
-val parseAttestData : sender -> option data -> attestData `RT.t` 813
-let parseAttestData sender msgBody = // 70
+val parseAttestData : sender -> option data -> attestData `RT.t` 790
+let parseAttestData sender msgBody = // 47
     begin match msgBody with
     | Some (Collection (Dict dict)) ->
         let! commit       = Dict.tryFind "Commit"       dict in // 64
         let! oraclePubKey = Dict.tryFind "OraclePubKey" dict in // 64
         let! recipient    = Dict.tryFind "Recipient"    dict in // 64
         let! senderLock   = senderToLock sender              in // 551
-        begin match commit , oraclePubKey , recipient with
-        | Some (Hash commit) , Some (PublicKey pk) , Some (Lock recip) ->
-            { commitData =
-                { commit       = commit
-                ; oraclePubKey = pk
-                }
-            ; recipient = recip
-            } |> RT.ok
-        | Some (Hash commit) , Some (PublicKey pk) , None ->
-            begin match senderLock with
-            | Some lock ->
-                { commitData =
-                    { commit       = commit
-                    ; oraclePubKey = pk
-                    }
-                ; recipient = lock
-                } |> RT.ok
+        begin match commit with
+        | Some (Hash commit) ->
+            begin match oraclePubKey with
+            | Some (PublicKey pk) ->
+                begin match recipient with
+                | Some (Lock recip) ->
+                    { commitData =
+                        { commit       = commit
+                        ; oraclePubKey = pk
+                        }
+                    ; recipient = recip
+                    } |> RT.ok
+                | Some _ ->
+                    RT.failw "Recipient (if specified) must be a lock"
+                | None ->
+                    begin match senderLock with
+                    | Some lock ->
+                        { commitData =
+                            { commit       = commit
+                            ; oraclePubKey = pk
+                            }
+                        ; recipient = lock
+                        } |> RT.ok
+                    | None ->
+                        RT.failw "When the recipient is unspecified the sender can't be anonymous"
+                    end
+                end
+            | Some _ ->
+                RT.failw "OraclePubKey must be a public key"
             | None ->
-                RT.failw "Unspecified recipient"
+                RT.failw "Couldn't find OraclePubKey in message body"
             end
-        | Some (Hash _) , Some (PublicKey _) , Some _ ->
-            RT.failw "Recipient must be a lock"
-        | _ , Some _ , _ ->
-            RT.failw "OraclePubKey must be a public key"
-        | _ , None , _ ->
-            RT.failw "Couldn't find OraclePubKey in message body"
-        | Some _ , _ , _ ->
+        | Some _ ->
             RT.failw "Commit must be an hash"
-        | None , _ , _ ->
+        | None ->
             RT.failw "Couldn't find Commit in message body"
         end
     | _ -> RT.autoFailw "MessageBody must be a dictionary."
@@ -260,11 +264,11 @@ val attest :
     sender ->
     option data ->
     txSkeleton ->
-    CR.t `cost` (W.size w * 128 + 2231)
+    CR.t `cost` (W.size w * 128 + 2208)
 let attest cid w sender msgBody txSkel = // 10
     let open RT in
     let! tx =
-        parseAttestData sender msgBody // 813
+        parseAttestData sender msgBody // 790
         >>= dataAttest cid w txSkel // W.size w * 128 + 1405
     in CR.ofResultTxSkel tx // 3
 
@@ -288,7 +292,7 @@ val main :
     -> CR.t `cost`
         begin match command with
         | "Commit" -> 1218
-        | "Attest" -> W.size w * 128 + 2239
+        | "Attest" -> W.size w * 128 + 2216
         | _        -> 8
         end
 let main txSkel _ cid command sender msgBody w _ = // 8
@@ -298,11 +302,11 @@ let main txSkel _ cid command sender msgBody w _ = // 8
         <: CR.t `cost`
             begin match command with
             | "Commit" -> 1210
-            | "Attest" -> W.size w * 128 + 2231
+            | "Attest" -> W.size w * 128 + 2208
             | _        -> 0
             end
     | "Attest" ->
-        attest cid w sender msgBody txSkel // W.size w * 128 + 2231
+        attest cid w sender msgBody txSkel // W.size w * 128 + 2208
     | _ ->
         RT.failw "Command not recognized"
     end
@@ -319,7 +323,7 @@ val cf :
 let cf _ _ command _ _ w _ = // 10
     begin match command with
     | "Commit" -> 1218
-    | "Attest" -> W.size w * 128 + 2239
+    | "Attest" -> W.size w * 128 + 2216
     | _        -> 8
     end
     |> ret
