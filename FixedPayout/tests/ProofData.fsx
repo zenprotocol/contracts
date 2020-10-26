@@ -1,3 +1,4 @@
+module PK = Consensus.Crypto.PublicKey
 
 let fromString s =
     match Consensus.Hash.fromString s with
@@ -6,7 +7,9 @@ let fromString s =
 
 //let __derivationPath = "m/44'/258'/0'/3/0"
 
-let oracle_pk = Consensus.Crypto.PublicKey "02ad784974b3f86ad97e008e20d2c107429041ed2d991ada2a1461b5077c11944c"B
+let oracle_pk_str = "02ad784974b3f86ad97e008e20d2c107429041ed2d991ada2a1461b5077c11944c"
+
+let oracle_pk = PK.fromString oracle_pk_str |> Option.get
 
 let timestamp = 1234UL
 

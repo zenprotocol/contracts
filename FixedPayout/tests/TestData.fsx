@@ -318,11 +318,14 @@ let bevent001 = {
     collateral       = OtherToken
 }
 
-let h_bevent001 = 
+let hashWith upd x =
     Sha3.empty
-    |> updateEvent bevent001
+    |> upd x
     |> Sha3.finalize
     |> Zen.Cost.Realized.__force
+
+let h_bevent001 = 
+    hashWith updateEvent bevent001
 
 let h_bull001 =
     hashBet (BullToken bevent001)
@@ -333,7 +336,15 @@ let h_bear001 =
     |> Option.get
 
 
-printfn "oraclePubKey = %s" "02ad784974b3f86ad97e008e20d2c107429041ed2d991ada2a1461b5077c11944c"
+let h_publicKey = hashWith updatePublicKey ProofData.oracle_pk
+let h_contractId = hashWith updateContractId CONTRACT_ID_ORACLE
+let h_ticker = hashWith updateString bevent001.ticker
+let h_priceLow = hashWith ((<<) Zen.Cost.Realized.__force << Sha3.updateU64) bevent001.priceLow
+let h_start = hashWith ((<<) Zen.Cost.Realized.__force << Sha3.updateU64) bevent001.start
+let h_collateral = hashWith ((<<) Zen.Cost.Realized.__force << Sha3.updateAsset) (bevent001.collateral |> realizeAsset |> Option.get |> fun (Types.Asset (Types.ContractId(v, Consensus.Hash.Hash cid),Consensus.Hash.Hash h)) -> (v,cid,h))
+
+
+printfn "oraclePubKey = %s" ProofData.oracle_pk_str
 printfn "oracleContractId = %s" (CONTRACT_ID_ORACLE.ToString())
 printfn "ticker = %s" bevent001.ticker
 printfn "priceLow = %d" bevent001.priceLow
@@ -342,3 +353,9 @@ printfn "collateral_asset = %s" OTHER_TOKEN_STRING
 printfn "h_event = %s" (Consensus.Hash.Hash h_bevent001).AsString
 printfn "h_bull = %s" (Consensus.Hash.Hash h_bull001).AsString
 printfn "h_bear = %s" (Consensus.Hash.Hash h_bear001).AsString
+printfn "h_publicKey = %s" (Consensus.Hash.Hash h_publicKey).AsString
+printfn "h_contractId = %s" (Consensus.Hash.Hash h_contractId).AsString
+printfn "h_ticker = %s" (Consensus.Hash.Hash h_ticker).AsString
+printfn "h_priceLow = %s" (Consensus.Hash.Hash h_priceLow).AsString
+printfn "h_start = %s" (Consensus.Hash.Hash h_start).AsString
+printfn "h_collateral = %s" (Consensus.Hash.Hash h_collateral).AsString
