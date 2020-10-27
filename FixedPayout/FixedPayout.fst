@@ -273,19 +273,13 @@ let parseContractId fieldName errMsg dict = // 6
                 RT.incFailw 64 "OracleContractId must be 72 characters long"
     end
 
-val parseAsset: string -> option (Dict.t data) -> result asset `cost` 156
-let parseAsset fieldName dict = // 5
+val parseAsset: string -> string -> option (Dict.t data) -> result asset `cost` 150
+let parseAsset fieldName errMsg dict = // 5
     let open RT in
-    parseOptField tryString fieldName dict >>= // 73
-    begin fun s -> match s with
-    | Some s -> // 11
-        s
-        |> Asset.parse // 64
-        |> RT.ofOptionT "The given asset is not a valid asset"
-        |> inc 3
-    | None ->
-        Asset.zenAsset
-        |> RT.incRet 67
+    parseField tryString fieldName errMsg dict >>= // 73
+    begin
+    Asset.parse // 64
+    >> RT.ofOptionT "The given asset is not a valid asset"
     end
 
 val getTimestamp        : parser U64.t          82
@@ -301,7 +295,7 @@ val getValue            : parser U64.t          82
 val getIndex            : parser U64.t          82
 val getPosition         : parser position       91
 val getOracleContractId : parser contractId     162
-val getCollateral       : parser asset          159
+val getCollateral       : parser asset          154
 
 let getTimestamp        dict = dict |>
     parseField      tryU64       "Timestamp"        "Could not parse Timestamp"
@@ -330,7 +324,7 @@ let getPosition         dict = dict |>
 let getOracleContractId dict = dict |>
     parseContractId              "OracleContractId" "Could not parse OracleContractId"
 let getCollateral       dict = dict |>
-    parseAsset                   "Collateral"
+    parseAsset                   "Collateral"       "Could not parse Collateral"
 
 val parseProof': option (Dict.t data)
     -> result proof `cost` (94 + (auditPathMaxLength * 22 + 415))
@@ -375,7 +369,7 @@ let parseAttestation dict = // 11
             pubKey    = pubKey;
         })))
 
-val parseEvent: option (Dict.t data) -> result betEvent `cost` 856
+val parseEvent: option (Dict.t data) -> result betEvent `cost` 851
 let parseEvent dict = // 41
     let open RT in
     dict |> getOraclePubKey     >>= (fun oraclePubKey     -> // 82
@@ -385,7 +379,7 @@ let parseEvent dict = // 41
     dict |> getPriceHigh        >>= (fun priceHigh        -> // 77
     dict |> getStart            >>= (fun start            -> // 82
     dict |> getExpiry           >>= (fun expiry           -> // 77
-    dict |> getCollateral       >>= (fun collateral       -> // 159
+    dict |> getCollateral       >>= (fun collateral       -> // 154
         RT.ok ({
             oraclePubKey     = oraclePubKey;
             oracleContractId = oracleContractId;
@@ -397,10 +391,10 @@ let parseEvent dict = // 41
             collateral       = collateral;
         })))))))))
 
-val parseRedemption': option (Dict.t data) -> result redemption `cost` (1133 + (auditPathMaxLength * 22 + 703))
+val parseRedemption': option (Dict.t data) -> result redemption `cost` (1133 + (auditPathMaxLength * 22 + 698))
 let parseRedemption' dict = // 22
     let open RT in
-    dict |> parseEvent       >>= (fun bevent      -> // 856
+    dict |> parseEvent       >>= (fun bevent      -> // 851
     dict |> getPosition      >>= (fun position    -> // 91
     dict |> parseAttestation >>= (fun attestation -> // 262
     dict |> getTimestamp     >>= (fun timestamp   -> // 82
@@ -415,10 +409,10 @@ let parseRedemption' dict = // 22
             proof       = proof;
         }))))))
 
-val parseRedemption: option (Dict.t data) -> result redemption `cost` (auditPathMaxLength * 22 + 1839)
+val parseRedemption: option (Dict.t data) -> result redemption `cost` (auditPathMaxLength * 22 + 1834)
 let parseRedemption dict = // 3
     parseRedemption' dict
-    |> (fun x -> x <: result redemption `cost` (auditPathMaxLength * 22 + 1836))
+    |> (fun x -> x <: result redemption `cost` (auditPathMaxLength * 22 + 1831))
 
 
 
@@ -601,12 +595,12 @@ let issueEvent txSkel contractId sender bevent = // 50
     >>= (TX.lockToContract bevent.collateral m contractId >> liftCost) // 64
     >>= CR.ofTxSkel                                                    // 3
 
-val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 5364
+val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 5359
 let issue txSkel contractId sender dict = // 10
     let open RT in
     ret dict
     >>= parseDict                           // 15
-    >>= parseEvent                          // 856
+    >>= parseEvent                          // 851
     >>= issueEvent txSkel contractId sender // 4483
 
 
@@ -651,22 +645,20 @@ val redeem' :
     -> contractId
     -> sender
     -> option data
-    -> CR.t `cost` (0 + 15 + (auditPathMaxLength * 22 + 1839) + (auditPathMaxLength * 420 + 213) + (W.size w * 256 + 3977) + 13)
+    -> CR.t `cost` (0 + 15 + (auditPathMaxLength * 22 + 1834) + (auditPathMaxLength * 420 + 213) + (W.size w * 256 + 3977) + 13)
 let redeem' w txSkel contractId sender dict = // 13
     let open RT in
     ret dict
     >>= parseDict                                   // 15
-    >>= parseRedemption                             // (auditPathMaxLength * 22 + 1839)
+    >>= parseRedemption                             // (auditPathMaxLength * 22 + 1834)
     >>= validateRedemption                          // (auditPathMaxLength * 420 + 213)
     >>= redeemRedemption w txSkel contractId sender // (W.size w * 256 + 3977)
 
-//val redeem: (w:wallet) -> txSkeleton -> contractId -> sender
-//    -> option data -> CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 5506)
 val redeem: (w:wallet) -> txSkeleton -> contractId -> sender
-    -> option data -> CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 6064)
+    -> option data -> CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 6059)
 let redeem w txSkel contractId sender dict = // 7
     redeem' w txSkel contractId sender dict
-    |> (fun x -> x <: CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 6057))
+    |> (fun x -> x <: CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 6052))
 
 
 
@@ -732,12 +724,12 @@ val cancel'  :
   -> sender
   -> txSkeleton
   -> option data
-  -> CR.t `cost` (0 + 15 + 856 + (W.size w * 128 + 4082) + 11)
+  -> CR.t `cost` (0 + 15 + 851 + (W.size w * 128 + 4082) + 11)
 let cancel' w contractId sender txSkel dict = // 11
     let open RT in
     ret dict
     >>= parseDict                              // 15
-    >>= parseEvent                             // 856
+    >>= parseEvent                             // 851
     >>= cancelEvent w contractId sender txSkel // (W.size w * 128 + 4082)
 
 val cancel  :
@@ -746,10 +738,10 @@ val cancel  :
   -> sender
   -> txSkeleton
   -> option data
-  -> CR.t `cost` (W.size w * 128 + 4971)
+  -> CR.t `cost` (W.size w * 128 + 4966)
 let cancel w contractId sender txSkel dict = // 7
     cancel' w contractId sender txSkel dict
-    |> (fun x -> x <: CR.t `cost` (W.size w * 128 + 4964))
+    |> (fun x -> x <: CR.t `cost` (W.size w * 128 + 4959))
 
 
 
@@ -771,11 +763,11 @@ val main:
     -> CR.t `cost` (
         match command with
         | "Issue" ->
-            5364 + 9
+            5359 + 9
         | "Redeem" ->
-            auditPathMaxLength * 442 + W.size w * 256 + 6064 + 9
+            auditPathMaxLength * 442 + W.size w * 256 + 6059 + 9
         | "Cancel" ->
-            W.size w * 128 + 4971 + 9
+            W.size w * 128 + 4966 + 9
         | _ ->
             9)
 let main txSkel context contractId command sender messageBody w state = // 9
@@ -785,11 +777,11 @@ let main txSkel context contractId command sender messageBody w state = // 9
         <: CR.t `cost` (
             match command with
             | "Issue" ->
-                5364
+                5359
             | "Redeem" ->
-                auditPathMaxLength * 442 + W.size w * 256 + 6064
+                auditPathMaxLength * 442 + W.size w * 256 + 6059
             | "Cancel" ->
-                W.size w * 128 + 4971
+                W.size w * 128 + 4966
             | _ ->
                 0)
     | "Redeem" ->
@@ -812,11 +804,11 @@ let cf _ _ command _ _ w _ =
     ((
         match command with
         | "Issue" ->
-            5364 + 9
+            5359 + 9
         | "Redeem" ->
-            auditPathMaxLength * 442 + W.size w * 256 + 6064 + 9
+            auditPathMaxLength * 442 + W.size w * 256 + 6059 + 9
         | "Cancel" ->
-            W.size w * 128 + 4971 + 9
+            W.size w * 128 + 4966 + 9
         | _ ->
             9
      ) <: nat) |> ret
