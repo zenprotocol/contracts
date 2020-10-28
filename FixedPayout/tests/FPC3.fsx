@@ -109,7 +109,7 @@ let PK_OTHER    = generatePublicKey()
 
 let fpcMain, fpcCost = Load.extractMainAndCost "output/FixedPayout.dll"
 
-let OTHER_TOKEN_STRING = "00000000f24db32aa1881956646d3ccbb647df71455de10cf98b635810e8870906a56b63"
+let OTHER_TOKEN_STRING = "00000000ea0491531b62de13d9760c6d9dd4046316080d1339daae5d2072811815c6bbe39597cfa4856a2863d63c554f0d9d81541f1de480af3709cd81f4a8d43f3aab8f"
 
 
 
@@ -241,7 +241,8 @@ and realizeAsset asset : Option<Types.Asset> =
     | AttestToken attest ->
         match hashAttest attest with | attestHash -> Some (Types.Asset (CONTRACT_ID_ORACLE, Hash.Hash attestHash))
     | ZenToken ->
-        Some Consensus.Asset.Zen
+        "000000000000000000000000000000000000000000000000000000000000000000000000"
+        |> Consensus.Asset.fromString
     | OtherToken ->
         OTHER_TOKEN_STRING
         |> Consensus.Asset.fromString
@@ -273,7 +274,7 @@ and realizeData (data : fpcData) =
     |> AddInput.add_uint64         FIELD_INDEX              data._Index
     |> AddInput.add_string         FIELD_POSITION           data._Position
     |> AddRealized.add_contract rl FIELD_ORACLE_CONTRACT_ID data._OracleContractId
-    |> AddInput.add_string         FIELD_COLLATERAL         (data._Collateral |> Option.bind realizeAsset |> Option.map Consensus.Asset.toString)
+    |> AddRealized.add_asset    rl FIELD_COLLATERAL         data._Collateral
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
@@ -411,7 +412,7 @@ run_test "valid data & empty Tx"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
-                 _Collateral       = None
+                 _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -465,7 +466,7 @@ run_test "valid data & 100 kalapas"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
-                 _Collateral       = None
+                 _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -481,6 +482,47 @@ run_test "valid data & 100 kalapas"
             ; hasOutput  (Some <| Abs.AbsContract Abs.ThisContract) (Some <| ZenToken) (Some 100UL)
             ]
             fpcRealizer
+    end
+
+run_test "valid data & 100 kalapas but no collateral decleration"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) ZenToken 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Issue
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Issuer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                 _Timestamp        = None
+                 _Root             = None
+                 _OraclePubKey     = Some PK_Oracle
+                 _Ticker           = Some "USD"
+                 _PriceLow         = Some 123UL
+                 _PriceHigh        = None
+                 _Start            = Some 123UL
+                 _Expiry           = None
+                 _AuditPath        = None
+                 _Value            = None
+                 _Index            = None
+                 _Position         = None
+                 _OracleContractId = Some CID_Oracle
+                 _Collateral       = None
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Collateral"
     end
 
 run_test "valid data & 100 non-zen asset"
@@ -563,7 +605,7 @@ run_test "valid data & 100 kalapas but no sender"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
-                 _Collateral       = None
+                 _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -656,7 +698,7 @@ run_test "valid Bull redemption (100 ZP)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -704,7 +746,7 @@ run_test "valid Bear redemption (100 ZP)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
             }
          wallet      =
             Input.Wallet.empty
@@ -857,7 +899,7 @@ run_test "Bull redemption - 100 non-zen asset but no collateral decleration"
             |> Input.Wallet.realize fpcRealizer
          state       =
             None
-    } |> should_FAIL_with "Insufficient funds"
+    } |> should_FAIL_with "Could not parse Collateral"
     end
 
 run_test "Bear redemption - 100 non-zen asset declared but not provided"
@@ -977,7 +1019,7 @@ run_test "Bull redemption (100 ZP) with empty wallet"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
             }
          wallet      =
             Input.Wallet.empty
@@ -1019,7 +1061,7 @@ run_test "Bear redemption (100 ZP) with empty wallet"
                    _Index            = Some ProofData.index
                    _Position         = Some "Bear"
                    _OracleContractId = Some CID_Oracle
-                   _Collateral       = None
+                   _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1060,7 +1102,7 @@ run_test "wrong position"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1103,7 +1145,7 @@ run_test "wrong token"
                  _Index            = Some ProofData.index
                  _Position         = Some "Bear"
                  _OracleContractId = Some CID_Oracle
-                 _Collateral       = None
+                 _Collateral       = Some ZenToken
            }
         wallet      =
            Input.Wallet.empty
@@ -1157,7 +1199,7 @@ run_test "out of time Bull"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1211,7 +1253,7 @@ run_test "out of time Bear"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1254,7 +1296,7 @@ run_test "missing Timestamp (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1297,7 +1339,7 @@ run_test "missing Root (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1340,7 +1382,7 @@ run_test "missing OraclePubKey (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1383,7 +1425,7 @@ run_test "missing Ticker (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1426,7 +1468,7 @@ run_test "missing PriceLow (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1469,7 +1511,7 @@ run_test "missing PriceHigh (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1512,7 +1554,7 @@ run_test "missing Start (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1555,7 +1597,7 @@ run_test "missing Expiry (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1598,7 +1640,7 @@ run_test "missing AuditPath (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1641,7 +1683,7 @@ run_test "missing Value (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1684,7 +1726,7 @@ run_test "missing Position (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = None
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1727,7 +1769,7 @@ run_test "missing OracleContractId (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = None
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1770,7 +1812,7 @@ run_test "missing attestion token (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1811,7 +1853,7 @@ run_test "missing bet token (Bull)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bull"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1854,7 +1896,7 @@ run_test "missing Timestamp (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1897,7 +1939,7 @@ run_test "missing Root (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1940,7 +1982,7 @@ run_test "missing OraclePubKey (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -1983,7 +2025,7 @@ run_test "missing Ticker (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2026,7 +2068,7 @@ run_test "missing PriceLow (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2069,7 +2111,7 @@ run_test "missing PriceHigh (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2112,7 +2154,7 @@ run_test "missing Start (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2155,7 +2197,7 @@ run_test "missing Expiry (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2198,7 +2240,7 @@ run_test "missing AuditPath (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2241,7 +2283,7 @@ run_test "missing Value (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2284,7 +2326,7 @@ run_test "missing Position (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = None
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2327,7 +2369,7 @@ run_test "missing OracleContractId (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = None
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2370,7 +2412,7 @@ run_test "missing attestion token (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2411,7 +2453,7 @@ run_test "missing bet token (Bear)"
                   _Index            = Some ProofData.index
                   _Position         = Some "Bear"
                   _OracleContractId = Some CID_Oracle
-                  _Collateral       = None
+                  _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2560,7 +2602,7 @@ run_test "valid data & empty Tx"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
-                 _Collateral       = None
+                 _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2603,7 +2645,7 @@ run_test "valid data & 100 kalapas"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
-                 _Collateral       = None
+                 _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty
@@ -2669,6 +2711,49 @@ run_test "valid data & 100 non-zen asset"
             fpcRealizer
     end
 
+run_test "valid data & 100 kalapas without declaring collateral"
+    begin
+    Input.feedContract fpcMain CONTRACT_ID_FP {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken bevent001)) 100UL
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken bevent001)) 100UL
+            |> Input.TxSkeleton.Abstract.realize fpcRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize fpcRealizer
+         command     =
+            CMD_Cancel
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Issuer
+            |> Input.Sender.realize fpcRealizer
+         messageBody =
+            realizeData {
+                 _Timestamp        = None
+                 _Root             = None
+                 _OraclePubKey     = Some PK_Oracle
+                 _Ticker           = Some "USD"
+                 _PriceLow         = Some 123UL
+                 _PriceHigh        = None
+                 _Start            = Some 123UL
+                 _Expiry           = None
+                 _AuditPath        = None
+                 _Value            = None
+                 _Index            = None
+                 _Position         = None
+                 _OracleContractId = Some CID_Oracle
+                 _Collateral       = None
+             }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
+            |> Input.Wallet.realize fpcRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Could not parse Collateral"
+    end
+
 run_test "valid data & 100 non-zen asset without declaring collateral"
     begin
     Input.feedContract fpcMain CONTRACT_ID_FP {
@@ -2709,7 +2794,7 @@ run_test "valid data & 100 non-zen asset without declaring collateral"
             |> Input.Wallet.realize fpcRealizer
          state       =
             None
-    } |> should_FAIL_with "Insufficient funds"
+    } |> should_FAIL_with "Could not parse Collateral"
     end
 
 run_test "valid data & 100 kalapas but no sender"
@@ -2744,7 +2829,7 @@ run_test "valid data & 100 kalapas but no sender"
                  _Index            = None
                  _Position         = None
                  _OracleContractId = Some CID_Oracle
-                 _Collateral       = None
+                 _Collateral       = Some ZenToken
              }
          wallet      =
             Input.Wallet.empty

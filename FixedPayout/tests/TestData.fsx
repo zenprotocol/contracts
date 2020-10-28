@@ -109,7 +109,7 @@ let PK_OTHER    = generatePublicKey()
 
 let fpcMain, fpcCost = Load.extractMainAndCost "output/FixedPayout.dll"
 
-let OTHER_TOKEN_STRING = "00000000f24db32aa1881956646d3ccbb647df71455de10cf98b635810e8870906a56b63"
+let OTHER_TOKEN_STRING = "00000000ea0491531b62de13d9760c6d9dd4046316080d1339daae5d2072811815c6bbe39597cfa4856a2863d63c554f0d9d81541f1de480af3709cd81f4a8d43f3aab8f"
 
 let fromString s =
     match Consensus.Hash.fromString s with
@@ -359,3 +359,26 @@ printfn "h_ticker = %s" (Consensus.Hash.Hash h_ticker).AsString
 printfn "h_priceLow = %s" (Consensus.Hash.Hash h_priceLow).AsString
 printfn "h_start = %s" (Consensus.Hash.Hash h_start).AsString
 printfn "h_collateral = %s" (Consensus.Hash.Hash h_collateral).AsString
+
+
+let h_hashzero =
+    let h =
+        Consensus.Hash.fromString "0000000000000000000000000000000000000000000000000000000000000000"
+        |> Infrastructure.Result.get
+    Sha3.empty
+    |> Sha3.updateHash ((fun (Consensus.Hash.Hash h) -> h) h)
+    |> Zen.Cost.Realized.__force
+    |> Sha3.finalize
+    |> Zen.Cost.Realized.__force
+
+printfn "updateHash zeros = %s" (Consensus.Hash.Hash h_hashzero).AsString
+
+
+let h_zenasset =
+    Sha3.empty
+    |> Sha3.updateAsset Zen.Asset.zenAsset
+    |> Zen.Cost.Realized.__force
+    |> Sha3.finalize
+    |> Zen.Cost.Realized.__force
+
+printfn "h_zenasset = %s" (Consensus.Hash.Hash h_zenasset).AsString
