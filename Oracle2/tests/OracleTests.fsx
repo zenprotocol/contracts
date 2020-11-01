@@ -176,6 +176,61 @@ let commit002 = {
     pubKey = PK_Other
 }
 
+
+(*
+------------------------------------------------------------------------------------------------------------------------
+======================================== Tokenization Tests ============================================================
+------------------------------------------------------------------------------------------------------------------------
+*)
+
+let mutable ctr = 0
+
+printfn "\n\n======================================== Tokenization ==================================================================="
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash" ctr
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+   let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
+
+   let res1 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk1} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashCommitData {commit = commit2 ; oraclePubKey = pk2} |> Zen.Cost.Realized.__force
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only pks are different)" ctr
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+
+   let res1 = Oracle2.hashCommitData {commit = commit ; oraclePubKey = pk1} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashCommitData {commit = commit ; oraclePubKey = pk2} |> Zen.Cost.Realized.__force
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only commits are different)" ctr
+   let pk = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+   let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
+
+   let res1 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashCommitData {commit = commit2 ; oraclePubKey = pk} |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+
+
 (*
 ------------------------------------------------------------------------------------------------------------------------
 ======================================== COMMAND: "Commit" =============================================================
@@ -588,7 +643,7 @@ run_test "valid attest - no recipient and anonymous sender"
             |> Input.Wallet.realize ocRealizer
          state       =
             None
-    } |> should_FAIL_with "Unspecified recipient"
+    } |> should_FAIL_with "When the recipient is unspecified the sender can't be anonymous"
     end
 
 run_test "invalid attest - no commit token"

@@ -280,6 +280,351 @@ and realizeData (data : fpcData) =
     |> Some
 
 
+(*
+------------------------------------------------------------------------------------------------------------------------
+======================================== Tokenization Tests ============================================================
+------------------------------------------------------------------------------------------------------------------------
+*)
+
+let mutable ctr = 0
+
+let cvtAsset (Types.Asset (Types.ContractId (version, assetType), subType)) = (version, Consensus.Hash.bytes assetType, Consensus.Hash.bytes subType)
+
+let CID1 =
+   "00000000f24db32aa1881956646d3ccbb647df71455de10cf98b635810e8870906a56b63"
+   |> Consensus.ContractId.fromString
+   |> Option.get
+   |> Consensus.ZFStar.fsToFstContractId
+
+let CID2 =
+   "00000000e3113f8bf9cf8b764d945d6f99c642bdb069d137bdd5f7e44f1e75947f58a044"
+   |> Consensus.ContractId.fromString
+   |> Option.get
+   |> Consensus.ZFStar.fsToFstContractId
+
+let ASSET1 =
+   "00000000ea0491531b62de13d9760c6d9dd4046316080d1339daae5d2072811815c6bbe39597cfa4856a2863d63c554f0d9d81541f1de480af3709cd81f4a8d43f3aab8f"
+   |> Consensus.Asset.fromString
+   |> Option.get
+   |> cvtAsset
+
+let ASSET2 =
+   "00000000ae4082531b62de13d9760c6d9dd4046316080d1339daae5d2072811815c6bbe39597cfa4856a2863d63c554f0d9d81541f1de480af3709cd81f4a8d43f3aab8g"
+   |> Consensus.Asset.fromString
+   |> Option.get
+   |> cvtAsset
+
+printfn "\n\n======================================== Tokenization ==================================================================="
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk2
+         oracleContractId = CID2
+         ticker = "XYZW" |> Consensus.ZFStar.fsToFstString
+         priceLow = 17UL
+         priceHigh = Some 19UL
+         start = 4321UL
+         expiry = Some 22UL
+         collateral = ASSET2
+      }
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bear }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only pks are different)" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 = { bevent1 with oraclePubKey = pk2 }
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bull }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only contract IDs are different)" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 = { bevent1 with oracleContractId = CID2 }
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bull }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only tickers are different)" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 = { bevent1 with ticker = "XYZW" |> Consensus.ZFStar.fsToFstString }
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bull }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only priceLows are different)" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 = { bevent1 with priceLow = 17UL }
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bull }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only priceHighs are different)" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 = { bevent1 with priceHigh = Some 19UL }
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bull }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only starts are different)" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 = { bevent1 with start = 4321UL }
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bull }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only expiries are different)" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 = { bevent1 with expiry = Some 22UL }
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bull }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only collaterals are different)" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 = { bevent1 with collateral = ASSET2 }
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bull }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) different data should give different hash (only positions are different)" ctr
+   
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   
+   let bevent1 : FixedPayout.betEvent = 
+      {
+         oraclePubKey = pk1
+         oracleContractId = CID1
+         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
+         priceLow = 15UL
+         priceHigh = Some 16UL
+         start = 1234UL
+         expiry = Some 18UL
+         collateral = ASSET1
+      }
+
+   let bevent2 = bevent1
+   
+   let bet1 = { bevent = bevent1 ; position = Bull }
+   let bet2 = { bevent = bevent2 ; position = Bear }
+
+   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
+   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
 
 (*
 ------------------------------------------------------------------------------------------------------------------------
