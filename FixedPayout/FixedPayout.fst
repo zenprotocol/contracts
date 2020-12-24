@@ -581,27 +581,27 @@ let validateRedemption redemption = // 7
 -------------------------------------------------------------------------------
 *)
 
-val issueEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 4483
-let issueEvent txSkel contractId sender bevent = // 50
+val issueEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 4485
+let issueEvent txSkel contractId sender bevent = // 52
     let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1463
     let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1463
     let! m         = TX.getAvailableTokens bevent.collateral txSkel           in // 64
     let open RT in
     ret txSkel
-    >>= (TX.mint m bullToken >> liftCost)                              // 64
-    >>= (TX.mint m bearToken >> liftCost)                              // 64
-    >>= lockToSender bullToken m sender                                // 624
-    >>= lockToSender bearToken m sender                                // 624
-    >>= (TX.lockToContract bevent.collateral m contractId >> liftCost) // 64
-    >>= CR.ofTxSkel                                                    // 3
+    >>= (TX.safeMint m bullToken >> ofOptionT "No collateral provided") // 64
+    >>= (TX.safeMint m bearToken >> ofOptionT "No collateral provided") // 64
+    >>= lockToSender bullToken m sender                                 // 624
+    >>= lockToSender bearToken m sender                                 // 624
+    >>= (TX.lockToContract bevent.collateral m contractId >> liftCost)  // 64
+    >>= CR.ofTxSkel                                                     // 3
 
-val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 5359
+val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 5361
 let issue txSkel contractId sender dict = // 10
     let open RT in
     ret dict
     >>= parseDict                           // 15
     >>= parseEvent                          // 851
-    >>= issueEvent txSkel contractId sender // 4483
+    >>= issueEvent txSkel contractId sender // 4485
 
 
 
@@ -763,7 +763,7 @@ val main:
     -> CR.t `cost` (
         match command with
         | "Issue" ->
-            5359 + 9
+            5361 + 9
         | "Redeem" ->
             auditPathMaxLength * 442 + W.size w * 256 + 6059 + 9
         | "Cancel" ->
@@ -777,7 +777,7 @@ let main txSkel context contractId command sender messageBody w state = // 9
         <: CR.t `cost` (
             match command with
             | "Issue" ->
-                5359
+                5361
             | "Redeem" ->
                 auditPathMaxLength * 442 + W.size w * 256 + 6059
             | "Cancel" ->
@@ -804,7 +804,7 @@ let cf _ _ command _ _ w _ =
     ((
         match command with
         | "Issue" ->
-            5359 + 9
+            5361 + 9
         | "Redeem" ->
             auditPathMaxLength * 442 + W.size w * 256 + 6059 + 9
         | "Cancel" ->
@@ -812,3 +812,5 @@ let cf _ _ command _ _ w _ =
         | _ ->
             9
      ) <: nat) |> ret
+
+
