@@ -2,8 +2,8 @@ module PK = Consensus.Crypto.PublicKey
 
 let fromString s =
     match Consensus.Hash.fromString s with
-    | Ok x -> Consensus.Hash.bytes x
-    | Error err -> failwithf "%s - %s" err s
+    | Some x -> Consensus.Hash.bytes x
+    | None -> failwithf "%s isn't a valid hash string" s
 
 //let __derivationPath = "m/44'/258'/0'/3/0"
 
@@ -29,7 +29,7 @@ let strings_path =
     ]
 
 let path =
-    Infrastructure.Result.traverseResultM Consensus.Hash.fromString strings_path
+    Infrastructure.Option.traverseM Consensus.Hash.fromString strings_path
     |> function
-       | Ok x -> x
-       | Error e -> failwithf "%A" e
+       | Some x -> x
+       | None -> failwith "Couldn't parse path"

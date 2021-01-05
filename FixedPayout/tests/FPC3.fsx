@@ -96,7 +96,7 @@ and fpcAsset =
     | OtherToken
 
 let CONTRACT_ID_FP     = Load.computeContractId "output/FixedPayout.fst"
-let CONTRACT_ID_ORACLE = Load.computeContractId "../Oracle2/output/Oracle2.fst"
+let CONTRACT_ID_ORACLE = Load.computeContractId "../Oracle2/Oracle2.fst"
 let CONTRACT_ID_OTHER  = Load.computeContractId "../Dex001/Dex001.fst"
 
 let generatePublicKey() =
@@ -764,7 +764,7 @@ run_test "valid data & empty Tx"
             |> Input.Wallet.realize fpcRealizer
          state       =
             None
-    } |> should_PASS_with_invalid_amounts
+    } |> should_FAIL_with "No collateral provided"
     end
 
 let bevent001 = {
