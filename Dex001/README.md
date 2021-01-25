@@ -1,14 +1,13 @@
-
 # ZenDex
 
 ## Verify/Build
 
-To verify/record hints, run `zebra  --z3rlimit 8000000 -e Dex001.fst`.  
+To verify/record hints, run `zebra e --z3rlimit 8000000 Dex001.fst`.  
 This command may take a long time to run the first time.
 Subsequent runs will be significantly faster.
 With an AMD Threadripper 1950x @4.0GHz, recording hints can take up to 2 minutes. Subsequent runs take ~11s.
 
-To build, run `zebra --z3rlimit 8000000 -c Dex001.fst`
+To build, run `zebra c --z3rlimit 8000000 Dex001.fst`
 
 ## How it works
 
