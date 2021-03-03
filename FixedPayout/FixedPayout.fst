@@ -9,7 +9,7 @@ module U8     = FStar.UInt8
 module U64    = FStar.UInt64
 module RT     = Zen.ResultT
 module Dict   = Zen.Dictionary
-module Sha3   = Zen.Hash.Sha3
+module Sha3   = Zen.Sha3
 module TX     = Zen.TxSkeleton
 module CR     = Zen.ContractResult
 module Asset  = Zen.Asset
@@ -20,6 +20,7 @@ module Str    = FStar.String
 module CId    = Zen.ContractId
 module Merkle = Zen.MerkleTree
 module W      = Zen.Wallet
+module PK     = Zen.PublicKey
 
 
 
@@ -33,10 +34,6 @@ type hashUpdate (a:Type) (m:nat) =
 
 type ticker =
     s:string { Str.length s <= 4 }
-
-// compressed public key
-type cpk =
-    byte ** hash
 
 type preAuditPath =
     p: list data { length p <= auditPathMaxLength }
@@ -96,61 +93,15 @@ type redemption = {
 -------------------------------------------------------------------------------
 *)
 
-// tries to map a function over a list.
-// if all of the mappings return Some, then returns Some list.
-// otherwise returns None.
-val tryMap (#a #b : Type) (#n : nat) :
-    (a -> option b `cost` n)
-    -> ls:list a
-    -> option (ls':list b{length ls' == length ls}) `cost` (length ls * (n + 20) + 20)
-let rec tryMap #a #b #n f ls = //20
-    match ls with
-    | hd::tl ->
-        let! hd' = f hd in
-        let! tl' = tryMap f tl in
-        begin match hd', tl' with
-        | Some hd', Some tl' ->
-            let (result: list b{length result == length ls}) = hd'::tl' in
-            OptT.some result
-        | _ -> OptT.none end
-    | [] -> [] |> OptT.incSome (length ls * (n + 20))
-
 let runOpt (#a #s:Type) (#m:nat) (update:a -> s -> s `cost` m) (x:option a) (st:s) : s `cost` (m + 5) =
     Opt.maybe (incRet m) update x st
-
-// compress a public key
-let compress (pk:publicKey): cpk `cost` 305 = // 13
-    let open U8 in
-    let aux (i : nat { i < 32 }) : byte `cost` 5 =
-        ret (Array.item (31 - i) pk)
-    in
-    let  parity = (Array.item 32 pk %^ 2uy) +^ 2uy in
-    let! x      = Array.init_pure 32 aux           in // 292
-    ret (parity, x)
-
-let updateCPK ((parity, h):cpk) (s:Sha3.t): Sha3.t `cost` 205 = // 7
-    ret s
-    >>= Sha3.updateByte parity // 6
-    >>= Sha3.updateHash h // 192
-
-// hash a compressed publicKey
-let hashCPK (cpk:cpk): hash `cost` 231 = // 6
-    ret Sha3.empty
-    >>= updateCPK cpk // 205
-    >>= Sha3.finalize // 20
-
-val lockToPubKey: asset -> U64.t -> publicKey -> txSkeleton -> txSkeleton `cost` 610
-let lockToPubKey asset amount pk tx = // 10
-    let! cpk     = compress pk in // 305
-    let! cpkHash = hashCPK cpk in // 231
-    TX.lockToPubKey asset amount cpkHash tx // 64
 
 val lockToSender: asset -> U64.t -> sender -> txSkeleton -> result txSkeleton `cost` 624
 let lockToSender asset amount sender txSkel = // 14
     match sender with
     | PK pk ->
         ret txSkel
-        >>= lockToPubKey asset amount pk // 610
+        >>= TX.lockToPublicKey asset amount pk // 610
         >>= RT.ok
     | Contract cid ->
         ret txSkel
@@ -215,7 +166,7 @@ let parseTicker fieldName errMsg dict = // 6
 
 val extractHashes: string -> ls:list data -> result (ls':list hash { length ls' == length ls }) `cost` (length ls * (2 + 20) + 20 + 5)
 let extractHashes errMsg ls = // 5
-    tryMap tryHash ls // (length ls * 22 + 20)
+    OptT.tryMapT tryHash ls // (length ls * 22 + 20)
     |> RT.ofOptionT errMsg
 
 val extractAuditPath': ls:preAuditPath -> result auditPath `cost` (length ls * 22 + 29)
@@ -420,9 +371,9 @@ let parseRedemption dict = // 3
 
 val updatePublicKey : hashUpdate publicKey 517
 let updatePublicKey pk s = // 7
-    let! cpk = compress pk in // 305
+    let! cpk = PK.compress pk in // 305
     ret s
-    >>= updateCPK cpk // 205
+    >>= Sha3.updateCPK cpk // 205
 
 // Sha3.updateString with a constant cost
 val updateTicker : hashUpdate ticker 36
@@ -431,17 +382,11 @@ let updateTicker tick s = // 12
     >>= Sha3.updateString tick // (6 * Str.length tick)
     >>= incRet (6 * (4 - Str.length tick))
 
-val updateContractId : hashUpdate contractId 223
-let updateContractId (v,h) s = // 7
-    ret s
-    >>= Sha3.updateU32  v // 24
-    >>= Sha3.updateHash h // 192
-
 val updateEvent : hashUpdate betEvent 1339
 let updateEvent bevent s = // 30
     ret s
     >>= updatePublicKey         bevent.oraclePubKey     // 517
-    >>= updateContractId        bevent.oracleContractId // 223
+    >>= Sha3.updateContractId   bevent.oracleContractId // 223
     >>= updateTicker            bevent.ticker           // 36
     >>= Sha3.updateU64          bevent.strike           // 48
     >>= Sha3.updateU64          bevent.start            // 48
