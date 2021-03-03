@@ -21,6 +21,8 @@ module CId    = Zen.ContractId
 module Merkle = Zen.MerkleTree
 module W      = Zen.Wallet
 
+
+
 let auditPathMaxLength : nat = 30
 
 type parser (a:Type) (m:nat) =
@@ -60,8 +62,7 @@ type betEvent = {
     oraclePubKey     : publicKey;
     oracleContractId : contractId;
     ticker           : ticker;
-    priceLow         : U64.t;
-    priceHigh        : option U64.t;
+    strike           : U64.t;
     start            : U64.t;
     expiry           : option U64.t;
     collateral       : asset;
@@ -286,8 +287,7 @@ val getTimestamp        : parser U64.t          82
 val getRoot             : parser hash           82
 val getOraclePubKey     : parser publicKey      82
 val getTicker           : parser ticker         94
-val getPriceLow         : parser U64.t          82
-val getPriceHigh        : parser (option U64.t) 77
+val getStrike           : parser U64.t          82
 val getStart            : parser U64.t          82
 val getExpiry           : parser (option U64.t) 77
 val getAuditPath        : parser auditPath      (auditPathMaxLength * 22 + 139 + 4)
@@ -305,10 +305,8 @@ let getOraclePubKey     dict = dict |>
     parseField      tryPublicKey "OraclePubKey"     "Could not parse OraclePubKey"
 let getTicker           dict = dict |>
     parseTicker                  "Ticker"           "Could not parse Ticker"
-let getPriceLow         dict = dict |>
-    parseField      tryU64       "PriceLow"         "Could not parse PriceLow"
-let getPriceHigh        dict = dict |>
-    parseOptField   tryU64       "PriceHigh"
+let getStrike           dict = dict |>
+    parseField      tryU64       "Strike"           "Could not parse Strike"
 let getStart            dict = dict |>
     parseField      tryU64       "Start"            "Could not parse Start"
 let getExpiry           dict = dict |>
@@ -369,14 +367,13 @@ let parseAttestation dict = // 11
             pubKey    = pubKey;
         })))
 
-val parseEvent: option (Dict.t data) -> result betEvent `cost` 851
-let parseEvent dict = // 41
+val parseEvent: option (Dict.t data) -> result betEvent `cost` 769
+let parseEvent dict = // 36
     let open RT in
     dict |> getOraclePubKey     >>= (fun oraclePubKey     -> // 82
     dict |> getOracleContractId >>= (fun oracleContractId -> // 162
     dict |> getTicker           >>= (fun ticker           -> // 94
-    dict |> getPriceLow         >>= (fun priceLow         -> // 82
-    dict |> getPriceHigh        >>= (fun priceHigh        -> // 77
+    dict |> getStrike           >>= (fun strike           -> // 82
     dict |> getStart            >>= (fun start            -> // 82
     dict |> getExpiry           >>= (fun expiry           -> // 77
     dict |> getCollateral       >>= (fun collateral       -> // 154
@@ -384,17 +381,16 @@ let parseEvent dict = // 41
             oraclePubKey     = oraclePubKey;
             oracleContractId = oracleContractId;
             ticker           = ticker;
-            priceLow         = priceLow;
-            priceHigh        = priceHigh;
+            strike           = strike;
             start            = start;
             expiry           = expiry;
             collateral       = collateral;
-        })))))))))
+        }))))))))
 
-val parseRedemption': option (Dict.t data) -> result redemption `cost` (1133 + (auditPathMaxLength * 22 + 698))
+val parseRedemption': option (Dict.t data) -> result redemption `cost` (1051 + (auditPathMaxLength * 22 + 698))
 let parseRedemption' dict = // 22
     let open RT in
-    dict |> parseEvent       >>= (fun bevent      -> // 851
+    dict |> parseEvent       >>= (fun bevent      -> // 769
     dict |> getPosition      >>= (fun position    -> // 91
     dict |> parseAttestation >>= (fun attestation -> // 262
     dict |> getTimestamp     >>= (fun timestamp   -> // 82
@@ -409,10 +405,10 @@ let parseRedemption' dict = // 22
             proof       = proof;
         }))))))
 
-val parseRedemption: option (Dict.t data) -> result redemption `cost` (auditPathMaxLength * 22 + 1834)
+val parseRedemption: option (Dict.t data) -> result redemption `cost` (auditPathMaxLength * 22 + 1752)
 let parseRedemption dict = // 3
     parseRedemption' dict
-    |> (fun x -> x <: result redemption `cost` (auditPathMaxLength * 22 + 1831))
+    |> (fun x -> x <: result redemption `cost` (auditPathMaxLength * 22 + 1749))
 
 
 
@@ -441,14 +437,13 @@ let updateContractId (v,h) s = // 7
     >>= Sha3.updateU32  v // 24
     >>= Sha3.updateHash h // 192
 
-val updateEvent : hashUpdate betEvent 1397
-let updateEvent bevent s = // 35
+val updateEvent : hashUpdate betEvent 1339
+let updateEvent bevent s = // 30
     ret s
     >>= updatePublicKey         bevent.oraclePubKey     // 517
     >>= updateContractId        bevent.oracleContractId // 223
     >>= updateTicker            bevent.ticker           // 36
-    >>= Sha3.updateU64          bevent.priceLow         // 48
-    >>= Sha3.updateU64 `runOpt` bevent.priceHigh        // 53
+    >>= Sha3.updateU64          bevent.strike           // 48
     >>= Sha3.updateU64          bevent.start            // 48
     >>= Sha3.updateU64 `runOpt` bevent.expiry           // 53
     >>= Sha3.updateAsset        bevent.collateral       // 384
@@ -481,14 +476,14 @@ let hashAttestation attestation = // 9
     >>= Sha3.updateHash commit // 192
     >>= Sha3.finalize          // 20
 
-val hashBet : bet -> hash `cost` 1456
+val hashBet : bet -> hash `cost` 1398
 let hashBet bet = // 11
     ret Sha3.empty
-    >>= updateEvent    bet.bevent    // 1009
+    >>= updateEvent    bet.bevent   // 1339 
     >>= updatePosition bet.position // 28
     >>= Sha3.finalize               // 20
 
-val mkBetToken : contractId -> bet -> asset `cost` 1463
+val mkBetToken : contractId -> bet -> asset `cost` 1405
 let mkBetToken (v, h) bet = // 7
     let! betHash = hashBet bet in
     ret (v, h, betHash)
@@ -522,15 +517,13 @@ let validateTime redemption = // 14
         then RT.ok redemption
         else RT.failw "Attestation time is not within the given time bounds"
 
-val validatePrice: redemption -> result redemption `cost` 31
-let validatePrice redemption = // 21
+val validatePrice: redemption -> result redemption `cost` 17
+let validatePrice redemption = // 17
     let  bevent = redemption.bet.bevent   in
-    let  low    = bevent.priceLow         in
-    let  high   = bevent.priceHigh        in
+    let  strike = bevent.strike           in
     let  value  = redemption.proof.value  in
-    let! inb    = inBounds low high value in // 10
     let  pos    = redemption.bet.position in
-    match inb, pos with
+    match strike `U64.lte` value, pos with
     | true , Bull
     | false, Bear ->
         RT.ok redemption
@@ -565,12 +558,12 @@ let validateAuditPath redemption = // 8
         then RT.ok redemption
         else RT.failw "Invalid audit path"
 
-val validateRedemption: redemption -> result redemption `cost` (auditPathMaxLength * 420 + 213)
+val validateRedemption: redemption -> result redemption `cost` (auditPathMaxLength * 420 + 199)
 let validateRedemption redemption = // 7
     let open RT in
     ret redemption
     >>= validateTime      // 24
-    >>= validatePrice     // 31
+    >>= validatePrice     // 17
     >>= validateAuditPath // (auditPathMaxLength * 420 + 151)
 
 
@@ -581,10 +574,10 @@ let validateRedemption redemption = // 7
 -------------------------------------------------------------------------------
 *)
 
-val issueEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 4485
+val issueEvent: txSkeleton -> contractId -> sender -> betEvent -> CR.t `cost` 4369
 let issueEvent txSkel contractId sender bevent = // 52
-    let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1463
-    let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1463
+    let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1405
+    let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1405
     let! m         = TX.getAvailableTokens bevent.collateral txSkel           in // 64
     let open RT in
     ret txSkel
@@ -595,13 +588,13 @@ let issueEvent txSkel contractId sender bevent = // 52
     >>= (TX.lockToContract bevent.collateral m contractId >> liftCost)  // 64
     >>= CR.ofTxSkel                                                     // 3
 
-val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 5361
+val issue: txSkeleton -> contractId -> sender -> option data -> CR.t `cost` 5163
 let issue txSkel contractId sender dict = // 10
     let open RT in
     ret dict
     >>= parseDict                           // 15
-    >>= parseEvent                          // 851
-    >>= issueEvent txSkel contractId sender // 4485
+    >>= parseEvent                          // 769
+    >>= issueEvent txSkel contractId sender // 4369
 
 
 
@@ -617,9 +610,9 @@ val redeemRedemption' :
     -> contractId
     -> sender
     -> redemption
-    -> CR.t `cost` (1463 + (1242 + (64 + (0 + 64 + (W.size w * 128 + 192) + 624 + (W.size w * 128 + 192) + 64 + 3))) + 62)
+    -> CR.t `cost` (1405 + (1242 + (64 + (0 + 64 + (Zen.Wallet.size w * 128 + 192) + 624 + (Zen.Wallet.size w * 128 + 192) + 64 + 3))) + 62)
 let redeemRedemption' w txSkel contractId sender redemption = // 62
-    let! betToken         = mkBetToken contractId redemption.bet       in // 1463
+    let! betToken         = mkBetToken contractId redemption.bet       in // 1405
     let  oracleContractId = redemption.bet.bevent.oracleContractId     in
     let  attestation      = redemption.attestation                     in
     let! attestToken      = mkAttestToken oracleContractId attestation in // 1242
@@ -634,10 +627,10 @@ let redeemRedemption' w txSkel contractId sender redemption = // 62
     >>= CR.ofTxSkel                                                                                       // 3
 
 val redeemRedemption: (w:wallet) -> txSkeleton -> contractId -> sender -> redemption
-    -> CR.t `cost` (W.size w * 256 + 3977)
+    -> CR.t `cost` (W.size w * 256 + 3919)
 let redeemRedemption w txSkel contractId sender redemption = // 7
     redeemRedemption' w txSkel contractId sender redemption
-    |> (fun x -> x <: CR.t `cost` (W.size w * 256 + 3970))
+    |> (fun x -> x <: CR.t `cost` (W.size w * 256 + 3912))
 
 val redeem' :
     (w:wallet)
@@ -645,20 +638,20 @@ val redeem' :
     -> contractId
     -> sender
     -> option data
-    -> CR.t `cost` (0 + 15 + (auditPathMaxLength * 22 + 1834) + (auditPathMaxLength * 420 + 213) + (W.size w * 256 + 3977) + 13)
+    -> CR.t `cost` (0 + 15 + (auditPathMaxLength * 22 + 1752) + (auditPathMaxLength * 420 + 199) + (W.size w * 256 + 3919) + 13)
 let redeem' w txSkel contractId sender dict = // 13
     let open RT in
     ret dict
     >>= parseDict                                   // 15
-    >>= parseRedemption                             // (auditPathMaxLength * 22 + 1834)
-    >>= validateRedemption                          // (auditPathMaxLength * 420 + 213)
-    >>= redeemRedemption w txSkel contractId sender // (W.size w * 256 + 3977)
+    >>= parseRedemption                             // (auditPathMaxLength * 22 + 1752)
+    >>= validateRedemption                          // (auditPathMaxLength * 420 + 199)
+    >>= redeemRedemption w txSkel contractId sender // (W.size w * 256 + 3919)
 
 val redeem: (w:wallet) -> txSkeleton -> contractId -> sender
-    -> option data -> CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 6059)
+    -> option data -> CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 5905)
 let redeem w txSkel contractId sender dict = // 7
     redeem' w txSkel contractId sender dict
-    |> (fun x -> x <: CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 6052))
+    |> (fun x -> x <: CR.t `cost` (auditPathMaxLength * 442 + W.size w * 256 + 5898))
 
 
 
@@ -692,10 +685,10 @@ val cancelEvent':
     -> sender
     -> txSkeleton
     -> betEvent
-    -> CR.t `cost` (1463 + (1463 + (64 + (64 + (0 + (W.size w * 128 + 192) + 624 + 64 + 64 + 29 + 3)))) + 45)
+    -> CR.t `cost` (1405 + (1405 + (64 + (64 + (0 + (W.size w * 128 + 192) + 624 + 64 + 64 + 29 + 3)))) + 45)
 let cancelEvent' w contractId sender txSkel bevent = // 45
-    let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1075
-    let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1075
+    let! bullToken = mkBetToken contractId ({ bevent=bevent; position=Bull }) in // 1405
+    let! bearToken = mkBetToken contractId ({ bevent=bevent; position=Bear }) in // 1405
     let! mBull     = TX.getAvailableTokens bullToken txSkel                   in // 64
     let! mBear     = TX.getAvailableTokens bearToken txSkel                   in // 64
     let open RT in
@@ -713,10 +706,10 @@ val cancelEvent:
     -> sender
     -> txSkeleton
     -> betEvent
-    -> CR.t `cost` (W.size w * 128 + 4082)
+    -> CR.t `cost` (W.size w * 128 + 3966)
 let cancelEvent w contractId sender txSkel bevent = // 7
     cancelEvent' w contractId sender txSkel bevent
-    |> (fun x -> x <: CR.t `cost` (W.size w * 128 + 4075))
+    |> (fun x -> x <: CR.t `cost` (W.size w * 128 + 3959))
 
 val cancel'  :
   (w : wallet)
@@ -724,13 +717,13 @@ val cancel'  :
   -> sender
   -> txSkeleton
   -> option data
-  -> CR.t `cost` (0 + 15 + 851 + (W.size w * 128 + 4082) + 11)
+  -> CR.t `cost` (0 + 15 + 769 + (W.size w * 128 + 3966) + 11)
 let cancel' w contractId sender txSkel dict = // 11
     let open RT in
     ret dict
     >>= parseDict                              // 15
-    >>= parseEvent                             // 851
-    >>= cancelEvent w contractId sender txSkel // (W.size w * 128 + 4082)
+    >>= parseEvent                             // 769
+    >>= cancelEvent w contractId sender txSkel // (W.size w * 128 + 3966)
 
 val cancel  :
   (w : wallet)
@@ -738,10 +731,10 @@ val cancel  :
   -> sender
   -> txSkeleton
   -> option data
-  -> CR.t `cost` (W.size w * 128 + 4966)
+  -> CR.t `cost` (W.size w * 128 + 4768)
 let cancel w contractId sender txSkel dict = // 7
     cancel' w contractId sender txSkel dict
-    |> (fun x -> x <: CR.t `cost` (W.size w * 128 + 4959))
+    |> (fun x -> x <: CR.t `cost` (W.size w * 128 + 4761))
 
 
 
@@ -763,31 +756,31 @@ val main:
     -> CR.t `cost` (
         match command with
         | "Issue" ->
-            5361 + 9
+            5163 + 9
         | "Redeem" ->
-            auditPathMaxLength * 442 + W.size w * 256 + 6059 + 9
+            auditPathMaxLength * 442 + W.size w * 256 + 5905 + 9
         | "Cancel" ->
-            W.size w * 128 + 4966 + 9
+            W.size w * 128 + 4768 + 9
         | _ ->
             9)
 let main txSkel context contractId command sender messageBody w state = // 9
     match command with
     | "Issue" ->
-        issue txSkel contractId sender messageBody // 5364
+        issue txSkel contractId sender messageBody // 5163
         <: CR.t `cost` (
             match command with
             | "Issue" ->
-                5361
+                5163
             | "Redeem" ->
-                auditPathMaxLength * 442 + W.size w * 256 + 6059
+                auditPathMaxLength * 442 + W.size w * 256 + 5905
             | "Cancel" ->
-                W.size w * 128 + 4966
+                W.size w * 128 + 4768
             | _ ->
                 0)
     | "Redeem" ->
-        redeem w txSkel contractId sender messageBody // auditPathMaxLength * 442 + W.size w * 256 + 6064
+        redeem w txSkel contractId sender messageBody // auditPathMaxLength * 442 + W.size w * 256 + 5905
     | "Cancel" ->
-        cancel w contractId sender txSkel messageBody // W.size w * 128 + 4971
+        cancel w contractId sender txSkel messageBody // W.size w * 128 + 4768
     | _ ->
         RT.failw "Unsupported command"
 
@@ -804,11 +797,11 @@ let cf _ _ command _ _ w _ =
     ((
         match command with
         | "Issue" ->
-            5361 + 9
+            5163 + 9
         | "Redeem" ->
-            auditPathMaxLength * 442 + W.size w * 256 + 6059 + 9
+            auditPathMaxLength * 442 + W.size w * 256 + 5905 + 9
         | "Cancel" ->
-            W.size w * 128 + 4966 + 9
+            W.size w * 128 + 4768 + 9
         | _ ->
             9
      ) <: nat) |> ret
