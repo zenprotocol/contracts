@@ -15,18 +15,18 @@ This contract assumes there is a working oracle service and an oracle contract w
 
 The Fixed Payout contract can issue Bull and Bear positions on one of the tickers on which the oracle commits for a future event, and provides the winner with the collateral payed by the issuer.
 
-First - the issuer issues **position tokens** by specifying the future market price, which includes the public key of the oracle service, the contract ID of the oracle contract, the name of the forex ticker, the time frame in which the event will take place, and the price bounds on which the positions diverge.
+First - the issuer issues **position tokens** by specifying the future market price, which includes the public key of the oracle service, the contract ID of the oracle contract, the name of the forex ticker, the time frame in which the event will take place, and the price on which the positions diverge.
 
 The contract issues two position tokens, according to the possible positions:
 
-1. Bull - which believes the price will be **within** the specified price bounds during the specified time frame.
-2. Bear - which believes the price will be **outside** the specified price bounds during the specified time frame.
+1. Bull - which believes the price will be **above** or **equal to** the specified price during the specified time frame.
+2. Bear - which believes the price will be **below** the specified price during the specified time frame.
 
-Both of those tokens (issued by the same amount as the collateral) are sent to the issuer at the time of the issuing.
+Both of the tokens (issued by the same amount as the collateral) are sent to the issuer at the time of the issuing.
 
 The issuer will hold the position they believe in and sell the other tokens, the buyers will hold the opposite position, then they both wait until the event date will occur.
 
-Once the event for which the position was issued has occurred and the oracle has committed on the event data the rightful redeemers must ask the oracle service to provide the proof data (which contains the timestamp, the value of the asset at the time, the root of the Merkle tree of the committed data set, the audit path of the `<asset, value>` pair within the Merkle tree, the index of the `<asset, value>` within the leaves array of the Merkle tree, and the parameters of the Merkle tree), and the oracle contract to attest for the global proof data (the timestamp, the root of the Merkle tree, and the oracle service public key), which would send the fixed payout contract an **attestation token** which when found in the wallet of the Fixed Payout contract will give the redeemer the right for the collateral, since the attestation token is the embodiment of the attestation of the oracle on the occurrence and details of the event.
+Once the event for which the position was issued has occurred, and the oracle has committed on the event data, the rightful redeemers must ask the oracle service to provide the proof data (which contains the timestamp, the value of the asset at the time, the root of the Merkle tree of the committed data set, the audit path of the `<asset, value>` pair within the Merkle tree, the index of the `<asset, value>` within the leaves array of the Merkle tree, and the parameters of the Merkle tree), and the oracle contract to attest for the global proof data (the timestamp, the root of the Merkle tree, and the oracle service public key), which would send the fixed payout contract an **attestation token** which when found in the wallet of the Fixed Payout contract will give the redeemer the right for the collateral, since the attestation token is the embodiment of the attestation of the oracle on the occurrence and details of the event.
 
 If the specified redemption data fits both the given attestation token (which guarantees its occurrence) and the position of the given position token (which guarantees the right of the redeemer for the collateral) - the contract then sends the redeemer some of the collateral according to how many position tokens they have provided.
 
@@ -47,8 +47,7 @@ To issue new position tokens - execute the contract with the `"Issue"` command w
 | `"OraclePubKey"`     | `publicKey`        | The public key of the oracle service
 | `"OracleContractId"` | `contractId`       | The contract ID of the oracle contract
 | `"Ticker"`           | `String`           | The name of the Forex ticker
-| `"PriceLow"`         | `UInt64`           | The lowest price for the Bull position
-| `"PriceHigh"`        | `UInt64`           | The highest price for the Bull position (optional)
+| `"Price"`            | `UInt64`           | The lowest price for the Bull position and the highest for the Bear position
 | `"Start"`            | `UInt64`           | The beginning of the time frame in which the asset will be redeemable
 | `"Expiry"`           | `UInt64`           | The end of the time frame in which the asset will be redeemable (optional)
 | `"Collateral"`       | `String`           | The collateral asset (as an asset string)
@@ -60,7 +59,7 @@ Diagrammatically it looks like this:
 ```
                                    Collateral × m
 Issuer ---------------------------------------------------------------> Contract
-   data = <oraclePK, oracleCID, ticker, priceBounds, timeBounds, collateral>
+   data = <oraclePK, oracleCID, ticker, price, timeBounds, collateral>
 
            [[ data ; "Bull" ]] × m     +     [[ data ; "Bear" ]] × m
 Contract |------------------------------------------------------------> Issuer
@@ -76,8 +75,7 @@ To redeem a position token - execute the contract with the `"Redeem"` command wh
 | `"OraclePubKey"`     | `publicKey`        | The public key of the oracle service
 | `"OracleContractId"` | `contractId`       | The contract ID of the oracle contract
 | `"Ticker"`           | `String`           | The name of the Forex ticker
-| `"PriceLow"`         | `UInt64`           | The lowest price for the bull position
-| `"PriceHigh"`        | `UInt64`           | The highest price for the bull position (optional)
+| `"Price"`            | `UInt64`           | The lowest price for the Bull position and the highest for the Bear position
 | `"Start"`            | `UInt64`           | The beginning of the time frame in which the asset will be redeemable
 | `"Expiry"`           | `UInt64`           | The end of the time frame in which the asset will be redeemable (optional)
 | `"Timestamp"`        | `UInt64`           | Time of the attestation given by the oracle (in milliseconds since Epoch - 00:00:00 UTC, January 1, 1970)
@@ -90,14 +88,13 @@ To redeem a position token - execute the contract with the `"Redeem"` command wh
 
 You'll have to ensure the fixed payout contract has an attestation token from the oracle contract specified in `"OracleContractId"` which commits to the data specified in `"Root"`, `"Timestamp"`, and `"OraclePubKey"`.
 
-You'll also have to provide the contract with the position tokens according to the position specified in `"Position"` - to redeem a Bull position provide the contract with Bull tokens, and make sure the attested value is within the price bounds specified in `"PriceLow"` and `"PriceHigh"`;
-to redeem a Bear position provide the contract with Bear tokens, and make sure the attested value is outside the price bounds specified in `"PriceLow"` and `"PriceHigh"`.
+You'll also have to provide the contract with the position tokens according to the position specified in `"Position"` - to redeem a Bull position provide the contract with Bull tokens, and make sure the attested value is above the price specified in `"Price"`; to redeem a Bear position provide the contract with Bear tokens, and make sure the attested value is below the price specified in `"Price"`.
 
 For both positions you'll also have to make sure that all the following conditions hold:
 
 1. The specified `"Timestamp"` is within the time bounds specified in `"Start"` and `"Expiry"`.
 2. The specified `"AuditPath"` is valid for the Merkle root specified in `"Root"` for the leaf given by the `"Ticker"` key with the specified `"Value"` in the specified `"Index"`.
-3. The data hashed in the position tokens is according to the specified `"OraclePubKey"`, `"OracleContractId"`, `"Ticker"`, `"PriceLow"`, `"PriceHigh"`, `"Start"`, `"Expiry"`, and `"Collateral"`.
+3. The data hashed in the position tokens is according to the specified `"OraclePubKey"`, `"OracleContractId"`, `"Ticker"`, `"Price"`, `"Start"`, `"Expiry"`, and `"Collateral"`.
 
 When all of the conditions hold (including the conditions which are specific for the position) the contract will destroy the provided tokens and lock the collateral asset to the sender of the same amount as the provided position tokens of the specified position.
 
@@ -136,7 +133,7 @@ Diagrammatically:
 ```
                               Collateral × m
 Contract --------------------------------------------------------> Canceler
-   data = <oraclePK, oracleCID, ticker, priceBounds, timeBounds, collateral>
+   data = <oraclePK, oracleCID, ticker, price, timeBounds, collateral>
 
          [[ data ; "Bull" ]] × m     +     [[ data ; "Bear" ]] × m
 Canceler --------------------------------------------------------|
@@ -164,5 +161,5 @@ Generated by the **Oracle** contract.
 Generated by the **Fixed Payout** contract.
 
 ```fsharp
-[[ oracleContractId ; ticker ; priceLow ; priceHigh ; start ; expiry ; collateral ; position ]]
+[[ oracleContractId ; ticker ; price ; start ; expiry ; collateral ; position ]]
 ```
