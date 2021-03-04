@@ -44,8 +44,7 @@ type fpcData = {
     _Root             : Types.Hash        option;
     _OraclePubKey     : fpcPK             option;
     _Ticker           : string            option;
-    _PriceLow         : uint64            option;
-    _PriceHigh        : uint64            option;
+    _Price            : uint64            option;
     _Start            : uint64            option;
     _Expiry           : uint64            option;
     _AuditPath        : (Types.Hash list) option;
@@ -78,8 +77,7 @@ and betEvent = {
     oraclePubKey     : fpcPK;
     oracleContractId : fpcCid;
     ticker           : string;
-    priceLow         : uint64;
-    priceHigh        : uint64 option;
+    price            : uint64;
     start            : uint64;
     expiry           : uint64 option;
     collateral       : fpcAsset;
@@ -123,8 +121,7 @@ let FIELD_TIMESTAMP          = "Timestamp"B
 let FIELD_ROOT               = "Root"B
 let FIELD_ORACLE_PUB_KEY     = "OraclePubKey"B
 let FIELD_TICKER             = "Ticker"B
-let FIELD_PRICE_LOW          = "PriceLow"B
-let FIELD_PRICE_HIGH         = "PriceHigh"B
+let FIELD_PRICE              = "Price"B
 let FIELD_START              = "Start"B
 let FIELD_EXPIRY             = "Expiry"B
 let FIELD_AUDIT_PATH         = "AuditPath"B
@@ -195,8 +192,7 @@ let rec updateEvent bevent s =
     |> updatePublicKey      (bevent.oraclePubKey     |> realizePK           )
     |> updateContractId     (bevent.oracleContractId |> realizeContract     )
     |> Sha3.updateString    (bevent.ticker           |> ZFStar.fsToFstString) |> Zen.Cost.Realized.__force
-    |> Sha3.updateU64        bevent.priceLow                                  |> Zen.Cost.Realized.__force
-    |> runOpt Sha3.updateU64 bevent.priceHigh
+    |> Sha3.updateU64        bevent.price                                     |> Zen.Cost.Realized.__force
     |> Sha3.updateU64        bevent.start                                     |> Zen.Cost.Realized.__force
     |> runOpt Sha3.updateU64 bevent.expiry
     |> Sha3.updateAsset      (bevent.collateral |> realizeAsset |> Option.get |> fun (Types.Asset (Types.ContractId(v, Consensus.Hash.Hash cid),Consensus.Hash.Hash h)) -> (v,cid,h)) |> Zen.Cost.Realized.__force
@@ -260,13 +256,12 @@ let rec fpcRealizer : Abs.Realizer<fpcPK, fpcCid, fpcAsset, fpcCommand, fpcData>
 
 and realizeData (data : fpcData) =
     let rl = fpcRealizer in
-    Input.MessageBody.emptyDict
+    Input.MessageBody.emptyDict()
     |> AddInput.add_uint64         FIELD_TIMESTAMP          data._Timestamp
     |> AddInput.add_hash           FIELD_ROOT               data._Root
     |> AddRealized.add_pk       rl FIELD_ORACLE_PUB_KEY     data._OraclePubKey
     |> AddInput.add_string         FIELD_TICKER             data._Ticker
-    |> AddInput.add_uint64         FIELD_PRICE_LOW          data._PriceLow
-    |> AddInput.add_uint64         FIELD_PRICE_HIGH         data._PriceHigh
+    |> AddInput.add_uint64         FIELD_PRICE              data._Price
     |> AddInput.add_uint64         FIELD_START              data._Start
     |> AddInput.add_uint64         FIELD_EXPIRY             data._Expiry
     |> AddInput.add_hash_list      FIELD_AUDIT_PATH         data._AuditPath
@@ -309,7 +304,7 @@ let ASSET1 =
    |> cvtAsset
 
 let ASSET2 =
-   "00000000ae4082531b62de13d9760c6d9dd4046316080d1339daae5d2072811815c6bbe39597cfa4856a2863d63c554f0d9d81541f1de480af3709cd81f4a8d43f3aab8g"
+   "00000000f24db32aa1881956646d3ccbb647df71455de10cf98b635810e8870906a56b630000000000000000000000000000000000000000000000000000000000000000"
    |> Consensus.Asset.fromString
    |> Option.get
    |> cvtAsset
@@ -329,8 +324,7 @@ let _ =
          oraclePubKey = pk1
          oracleContractId = CID1
          ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
+         price = 15UL
          start = 1234UL
          expiry = Some 18UL
          collateral = ASSET1
@@ -341,8 +335,7 @@ let _ =
          oraclePubKey = pk2
          oracleContractId = CID2
          ticker = "XYZW" |> Consensus.ZFStar.fsToFstString
-         priceLow = 17UL
-         priceHigh = Some 19UL
+         price = 17UL
          start = 4321UL
          expiry = Some 22UL
          collateral = ASSET2
@@ -369,8 +362,7 @@ let _ =
          oraclePubKey = pk1
          oracleContractId = CID1
          ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
+         price = 15UL
          start = 1234UL
          expiry = Some 18UL
          collateral = ASSET1
@@ -399,8 +391,7 @@ let _ =
          oraclePubKey = pk1
          oracleContractId = CID1
          ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
+         price = 15UL
          start = 1234UL
          expiry = Some 18UL
          collateral = ASSET1
@@ -429,8 +420,7 @@ let _ =
          oraclePubKey = pk1
          oracleContractId = CID1
          ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
+         price = 15UL
          start = 1234UL
          expiry = Some 18UL
          collateral = ASSET1
@@ -448,7 +438,7 @@ let _ =
 
 let _ =
    ctr <- ctr + 1
-   printfn "\n⬤ (%d) different data should give different hash (only priceLows are different)" ctr
+   printfn "\n⬤ (%d) different data should give different hash (only prices are different)" ctr
    
    let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
    let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
@@ -459,44 +449,13 @@ let _ =
          oraclePubKey = pk1
          oracleContractId = CID1
          ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
+         price = 15UL
          start = 1234UL
          expiry = Some 18UL
          collateral = ASSET1
       }
 
-   let bevent2 = { bevent1 with priceLow = 17UL }
-   
-   let bet1 = { bevent = bevent1 ; position = Bull }
-   let bet2 = { bevent = bevent2 ; position = Bull }
-
-   let res1 = FixedPayout.hashBet bet1 |> Zen.Cost.Realized.__force
-   let res2 = FixedPayout.hashBet bet2 |> Zen.Cost.Realized.__force
-   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
-   else printfn "  ✅ PASSED"
-
-let _ =
-   ctr <- ctr + 1
-   printfn "\n⬤ (%d) different data should give different hash (only priceHighs are different)" ctr
-   
-   let pk1 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
-   let pk2 = Consensus.ZFStar.fsToFstPublicKey <| generatePublicKey()
-   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
-   
-   let bevent1 : FixedPayout.betEvent = 
-      {
-         oraclePubKey = pk1
-         oracleContractId = CID1
-         ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
-         start = 1234UL
-         expiry = Some 18UL
-         collateral = ASSET1
-      }
-
-   let bevent2 = { bevent1 with priceHigh = Some 19UL }
+   let bevent2 = { bevent1 with price = 17UL }
    
    let bet1 = { bevent = bevent1 ; position = Bull }
    let bet2 = { bevent = bevent2 ; position = Bull }
@@ -519,8 +478,7 @@ let _ =
          oraclePubKey = pk1
          oracleContractId = CID1
          ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
+         price = 15UL
          start = 1234UL
          expiry = Some 18UL
          collateral = ASSET1
@@ -549,8 +507,7 @@ let _ =
          oraclePubKey = pk1
          oracleContractId = CID1
          ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
+         price = 15UL
          start = 1234UL
          expiry = Some 18UL
          collateral = ASSET1
@@ -579,8 +536,7 @@ let _ =
          oraclePubKey = pk1
          oracleContractId = CID1
          ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
+         price = 15UL
          start = 1234UL
          expiry = Some 18UL
          collateral = ASSET1
@@ -609,8 +565,7 @@ let _ =
          oraclePubKey = pk1
          oracleContractId = CID1
          ticker = "ABCD" |> Consensus.ZFStar.fsToFstString
-         priceLow = 15UL
-         priceHigh = Some 16UL
+         price = 15UL
          start = 1234UL
          expiry = Some 18UL
          collateral = ASSET1
@@ -708,8 +663,7 @@ run_test "empty dictionary & empty Tx"
                  _Root             = None
                  _OraclePubKey     = None
                  _Ticker           = None
-                 _PriceLow         = None
-                 _PriceHigh        = None
+                 _Price            = None
                  _Start            = None
                  _Expiry           = None
                  _AuditPath        = None
@@ -748,8 +702,7 @@ run_test "valid data & empty Tx"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -771,8 +724,7 @@ let bevent001 = {
     oraclePubKey     = PK_Oracle//: fpcPK;
     oracleContractId = CID_Oracle//: fpcCid;
     ticker           = "USD"//: string;
-    priceLow         = 123UL//: uint64;
-    priceHigh        = None//: uint64 option;
+    price            = 123UL//: uint64;
     start            = 123UL//: uint64;
     expiry           = None//: uint64 option;
     collateral       = ZenToken
@@ -802,8 +754,7 @@ run_test "valid data & 100 kalapas"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -851,8 +802,7 @@ run_test "valid data & 100 kalapas but no collateral decleration"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -892,8 +842,7 @@ run_test "valid data & 100 non-zen asset"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -941,8 +890,7 @@ run_test "valid data & 100 kalapas but no sender"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -974,8 +922,7 @@ let beventBull = {
     oraclePubKey     = PK_Oracle
     oracleContractId = CID_Oracle
     ticker           = ProofData.ticker
-    priceLow         = ProofData.price - 10UL
-    priceHigh        = Some (ProofData.price + 10UL)
+    price            = ProofData.price - 10UL
     start            = ProofData.timestamp - 10UL
     expiry           = Some (ProofData.timestamp + 10UL)
     collateral       = ZenToken
@@ -985,8 +932,7 @@ let beventBear = {
     oraclePubKey     = PK_Oracle
     oracleContractId = CID_Oracle
     ticker           = ProofData.ticker
-    priceLow         = ProofData.price + 10UL
-    priceHigh        = Some (ProofData.price + 20UL)
+    price            = ProofData.price + 10UL
     start            = ProofData.timestamp - 10UL
     expiry           = Some (ProofData.timestamp + 10UL)
     collateral       = ZenToken
@@ -1034,8 +980,7 @@ run_test "valid Bull redemption (100 ZP)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1082,8 +1027,7 @@ run_test "valid Bear redemption (100 ZP)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -1130,8 +1074,7 @@ run_test "valid Bull redemption (100 non-zen asset)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1178,8 +1121,7 @@ run_test "valid Bear redemption (100 non-zen asset)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -1226,8 +1168,7 @@ run_test "Bull redemption - 100 non-zen asset but no collateral decleration"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1269,8 +1210,7 @@ run_test "Bear redemption - 100 non-zen asset declared but not provided"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -1311,8 +1251,7 @@ run_test "Bear redemption - 100 non-zen asset declared but not provided (provide
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -1355,8 +1294,7 @@ run_test "Bull redemption (100 ZP) with empty wallet"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1397,8 +1335,7 @@ run_test "Bear redemption (100 ZP) with empty wallet"
                    _Root             = Some ProofData.root
                    _OraclePubKey     = Some PK_Oracle
                    _Ticker           = Some ProofData.ticker
-                   _PriceLow         = Some beventBear.priceLow
-                   _PriceHigh        = beventBear.priceHigh
+                   _Price            = Some beventBear.price
                    _Start            = Some beventBear.start
                    _Expiry           = beventBear.expiry
                    _AuditPath        = Some ProofData.path
@@ -1438,8 +1375,7 @@ run_test "wrong position"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1481,8 +1417,7 @@ run_test "wrong token"
                  _Root             = Some ProofData.root
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some ProofData.ticker
-                 _PriceLow         = Some beventBear.priceLow
-                 _PriceHigh        = beventBear.priceHigh
+                 _Price            = Some beventBear.price
                  _Start            = Some beventBear.start
                  _Expiry           = beventBear.expiry
                  _AuditPath        = Some ProofData.path
@@ -1506,8 +1441,7 @@ let beventBull_out_of_time = {
     oraclePubKey     = PK_Oracle
     oracleContractId = CID_Oracle
     ticker           = ProofData.ticker
-    priceLow         = ProofData.price - 10UL
-    priceHigh        = Some (ProofData.price + 10UL)
+    price            = ProofData.price - 10UL
     start            = ProofData.timestamp + 10UL
     expiry           = Some (ProofData.timestamp + 20UL)
     collateral       = ZenToken
@@ -1535,8 +1469,7 @@ run_test "out of time Bull"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull_out_of_time.priceLow
-                  _PriceHigh        = beventBull_out_of_time.priceHigh
+                  _Price            = Some beventBull_out_of_time.price
                   _Start            = Some beventBull_out_of_time.start
                   _Expiry           = beventBull_out_of_time.expiry
                   _AuditPath        = Some ProofData.path
@@ -1560,8 +1493,7 @@ let beventBear_out_of_time = {
     oraclePubKey     = PK_Oracle
     oracleContractId = CID_Oracle
     ticker           = ProofData.ticker
-    priceLow         = ProofData.price + 10UL
-    priceHigh        = Some (ProofData.price + 20UL)
+    price            = ProofData.price + 10UL
     start            = ProofData.timestamp + 10UL
     expiry           = Some (ProofData.timestamp + 20UL)
     collateral       = ZenToken
@@ -1589,8 +1521,7 @@ run_test "out of time Bear"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear_out_of_time.priceLow
-                  _PriceHigh        = beventBear_out_of_time.priceHigh
+                  _Price            = Some beventBear_out_of_time.price
                   _Start            = Some beventBear_out_of_time.start
                   _Expiry           = beventBear_out_of_time.expiry
                   _AuditPath        = Some ProofData.path
@@ -1632,8 +1563,7 @@ run_test "missing Timestamp (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1675,8 +1605,7 @@ run_test "missing Root (Bull)"
                   _Root             = None
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1718,8 +1647,7 @@ run_test "missing OraclePubKey (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = None
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1761,8 +1689,7 @@ run_test "missing Ticker (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = None
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1782,7 +1709,7 @@ run_test "missing Ticker (Bull)"
     } |> should_FAIL_with "Could not parse Ticker"
     end
 
-run_test "missing PriceLow (Bull)"
+run_test "missing Price (Bull)"
     begin
     Input.feedContract fpcMain CONTRACT_ID_FP {
          txSkel      =
@@ -1804,8 +1731,7 @@ run_test "missing PriceLow (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = None
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = None
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1822,50 +1748,7 @@ run_test "missing PriceLow (Bull)"
             |> Input.Wallet.realize fpcRealizer
          state       =
             None
-    } |> should_FAIL_with "Could not parse PriceLow"
-    end
-
-run_test "missing PriceHigh (Bull)"
-    begin
-    Input.feedContract fpcMain CONTRACT_ID_FP {
-         txSkel      =
-            Input.TxSkeleton.Abstract.empty
-            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BullToken beventBull)) 100UL
-            |> Input.TxSkeleton.Abstract.realize fpcRealizer
-         context     =
-            Input.Context.empty
-            |> Input.Context.realize fpcRealizer
-         command     =
-            CMD_Redeem
-            |> realizeCommand
-         sender      =
-            Abs.AbsPKSender PK_Redeemer
-            |> Input.Sender.realize fpcRealizer
-         messageBody =
-             realizeData {
-                  _Timestamp        = Some ProofData.timestamp
-                  _Root             = Some ProofData.root
-                  _OraclePubKey     = Some PK_Oracle
-                  _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = None
-                  _Start            = Some beventBull.start
-                  _Expiry           = beventBull.expiry
-                  _AuditPath        = Some ProofData.path
-                  _Value            = Some ProofData.price
-                  _Index            = Some ProofData.index
-                  _Position         = Some "Bull"
-                  _OracleContractId = Some CID_Oracle
-                  _Collateral       = Some ZenToken
-             }
-         wallet      =
-            Input.Wallet.empty
-            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
-            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
-            |> Input.Wallet.realize fpcRealizer
-         state       =
-            None
-    } |> should_FAIL_with "Insufficient funds"
+    } |> should_FAIL_with "Could not parse Price"
     end
 
 run_test "missing Start (Bull)"
@@ -1890,8 +1773,7 @@ run_test "missing Start (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = None
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -1933,8 +1815,7 @@ run_test "missing Expiry (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = None
                   _AuditPath        = Some ProofData.path
@@ -1976,8 +1857,7 @@ run_test "missing AuditPath (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = None
@@ -2019,8 +1899,7 @@ run_test "missing Value (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -2062,8 +1941,7 @@ run_test "missing Position (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -2105,8 +1983,7 @@ run_test "missing OracleContractId (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -2148,8 +2025,7 @@ run_test "missing attestion token (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -2189,8 +2065,7 @@ run_test "missing bet token (Bull)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBull.priceLow
-                  _PriceHigh        = beventBull.priceHigh
+                  _Price            = Some beventBull.price
                   _Start            = Some beventBull.start
                   _Expiry           = beventBull.expiry
                   _AuditPath        = Some ProofData.path
@@ -2232,8 +2107,7 @@ run_test "missing Timestamp (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2275,8 +2149,7 @@ run_test "missing Root (Bear)"
                   _Root             = None
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2318,8 +2191,7 @@ run_test "missing OraclePubKey (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = None
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2361,8 +2233,7 @@ run_test "missing Ticker (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = None
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2382,7 +2253,7 @@ run_test "missing Ticker (Bear)"
     } |> should_FAIL_with "Could not parse Ticker"
     end
 
-run_test "missing PriceLow (Bear)"
+run_test "missing Price (Bear)"
     begin
     Input.feedContract fpcMain CONTRACT_ID_FP {
          txSkel      =
@@ -2404,8 +2275,7 @@ run_test "missing PriceLow (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = None
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = None
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2422,50 +2292,7 @@ run_test "missing PriceLow (Bear)"
             |> Input.Wallet.realize fpcRealizer
          state       =
             None
-    } |> should_FAIL_with "Could not parse PriceLow"
-    end
-
-run_test "missing PriceHigh (Bear)"
-    begin
-    Input.feedContract fpcMain CONTRACT_ID_FP {
-         txSkel      =
-            Input.TxSkeleton.Abstract.empty
-            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Issuer) (BetToken (BearToken beventBear)) 100UL
-            |> Input.TxSkeleton.Abstract.realize fpcRealizer
-         context     =
-            Input.Context.empty
-            |> Input.Context.realize fpcRealizer
-         command     =
-            CMD_Redeem
-            |> realizeCommand
-         sender      =
-            Abs.AbsPKSender PK_Redeemer
-            |> Input.Sender.realize fpcRealizer
-         messageBody =
-             realizeData {
-                  _Timestamp        = Some ProofData.timestamp
-                  _Root             = Some ProofData.root
-                  _OraclePubKey     = Some PK_Oracle
-                  _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = None
-                  _Start            = Some beventBear.start
-                  _Expiry           = beventBear.expiry
-                  _AuditPath        = Some ProofData.path
-                  _Value            = Some ProofData.price
-                  _Index            = Some ProofData.index
-                  _Position         = Some "Bear"
-                  _OracleContractId = Some CID_Oracle
-                  _Collateral       = Some ZenToken
-             }
-         wallet      =
-            Input.Wallet.empty
-            |> Input.Wallet.add (Abs.AbsPK PK_Issuer, ZenToken, 100UL)
-            |> Input.Wallet.add (Abs.AbsContract (Abs.OtherContract CID_Oracle), AttestToken attest001, 1UL)
-            |> Input.Wallet.realize fpcRealizer
-         state       =
-            None
-    } |> should_FAIL_with "Insufficient funds"
+    } |> should_FAIL_with "Could not parse Price"
     end
 
 run_test "missing Start (Bear)"
@@ -2490,8 +2317,7 @@ run_test "missing Start (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = None
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2533,8 +2359,7 @@ run_test "missing Expiry (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = None
                   _AuditPath        = Some ProofData.path
@@ -2576,8 +2401,7 @@ run_test "missing AuditPath (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = None
@@ -2619,8 +2443,7 @@ run_test "missing Value (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2662,8 +2485,7 @@ run_test "missing Position (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2705,8 +2527,7 @@ run_test "missing OracleContractId (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2748,8 +2569,7 @@ run_test "missing attestion token (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2789,8 +2609,7 @@ run_test "missing bet token (Bear)"
                   _Root             = Some ProofData.root
                   _OraclePubKey     = Some PK_Oracle
                   _Ticker           = Some ProofData.ticker
-                  _PriceLow         = Some beventBear.priceLow
-                  _PriceHigh        = beventBear.priceHigh
+                  _Price            = Some beventBear.price
                   _Start            = Some beventBear.start
                   _Expiry           = beventBear.expiry
                   _AuditPath        = Some ProofData.path
@@ -2897,8 +2716,7 @@ run_test "empty data & empty Tx"
                  _Root             = None
                  _OraclePubKey     = None
                  _Ticker           = None
-                 _PriceLow         = None
-                 _PriceHigh        = None
+                 _Price            = None
                  _Start            = None
                  _Expiry           = None
                  _AuditPath        = None
@@ -2938,8 +2756,7 @@ run_test "valid data & empty Tx"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -2981,8 +2798,7 @@ run_test "valid data & 100 kalapas"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -3030,8 +2846,7 @@ run_test "valid data & 100 non-zen asset"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -3079,8 +2894,7 @@ run_test "valid data & 100 kalapas without declaring collateral"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -3122,8 +2936,7 @@ run_test "valid data & 100 non-zen asset without declaring collateral"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
@@ -3165,8 +2978,7 @@ run_test "valid data & 100 kalapas but no sender"
                  _Root             = None
                  _OraclePubKey     = Some PK_Oracle
                  _Ticker           = Some "USD"
-                 _PriceLow         = Some 123UL
-                 _PriceHigh        = None
+                 _Price            = Some 123UL
                  _Start            = Some 123UL
                  _Expiry           = None
                  _AuditPath        = None
