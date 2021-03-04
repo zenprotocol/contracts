@@ -59,7 +59,7 @@ type betEvent = {
     oraclePubKey     : publicKey;
     oracleContractId : contractId;
     ticker           : ticker;
-    strike           : U64.t;
+    price            : U64.t;
     start            : U64.t;
     expiry           : option U64.t;
     collateral       : asset;
@@ -238,7 +238,7 @@ val getTimestamp        : parser U64.t          82
 val getRoot             : parser hash           82
 val getOraclePubKey     : parser publicKey      82
 val getTicker           : parser ticker         94
-val getStrike           : parser U64.t          82
+val getPrice            : parser U64.t          82
 val getStart            : parser U64.t          82
 val getExpiry           : parser (option U64.t) 77
 val getAuditPath        : parser auditPath      (auditPathMaxLength * 22 + 139 + 4)
@@ -256,8 +256,8 @@ let getOraclePubKey     dict = dict |>
     parseField      tryPublicKey "OraclePubKey"     "Could not parse OraclePubKey"
 let getTicker           dict = dict |>
     parseTicker                  "Ticker"           "Could not parse Ticker"
-let getStrike           dict = dict |>
-    parseField      tryU64       "Strike"           "Could not parse Strike"
+let getPrice            dict = dict |>
+    parseField      tryU64       "Price"            "Could not parse Price"
 let getStart            dict = dict |>
     parseField      tryU64       "Start"            "Could not parse Start"
 let getExpiry           dict = dict |>
@@ -324,7 +324,7 @@ let parseEvent dict = // 36
     dict |> getOraclePubKey     >>= (fun oraclePubKey     -> // 82
     dict |> getOracleContractId >>= (fun oracleContractId -> // 162
     dict |> getTicker           >>= (fun ticker           -> // 94
-    dict |> getStrike           >>= (fun strike           -> // 82
+    dict |> getPrice            >>= (fun price            -> // 82
     dict |> getStart            >>= (fun start            -> // 82
     dict |> getExpiry           >>= (fun expiry           -> // 77
     dict |> getCollateral       >>= (fun collateral       -> // 154
@@ -332,7 +332,7 @@ let parseEvent dict = // 36
             oraclePubKey     = oraclePubKey;
             oracleContractId = oracleContractId;
             ticker           = ticker;
-            strike           = strike;
+            price            = price ;
             start            = start;
             expiry           = expiry;
             collateral       = collateral;
@@ -388,7 +388,7 @@ let updateEvent bevent s = // 30
     >>= updatePublicKey         bevent.oraclePubKey     // 517
     >>= Sha3.updateContractId   bevent.oracleContractId // 223
     >>= updateTicker            bevent.ticker           // 36
-    >>= Sha3.updateU64          bevent.strike           // 48
+    >>= Sha3.updateU64          bevent.price            // 48
     >>= Sha3.updateU64          bevent.start            // 48
     >>= Sha3.updateU64 `runOpt` bevent.expiry           // 53
     >>= Sha3.updateAsset        bevent.collateral       // 384
@@ -465,10 +465,10 @@ let validateTime redemption = // 14
 val validatePrice: redemption -> result redemption `cost` 17
 let validatePrice redemption = // 17
     let  bevent = redemption.bet.bevent   in
-    let  strike = bevent.strike           in
+    let  price  = bevent.price            in
     let  value  = redemption.proof.value  in
     let  pos    = redemption.bet.position in
-    match strike `U64.lte` value, pos with
+    match price `U64.lte` value, pos with
     | true , Bull
     | false, Bear ->
         RT.ok redemption
