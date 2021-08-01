@@ -31,22 +31,26 @@ type ocPK =
     | PK_Oracle
     | PK_Other
 
-type ocData = {
-    _Commit       : Types.Hash               option;
-    _OraclePubKey : ocPK                     option;
-    _Recipient    : Abs.AbsLock<ocPK, ocCid> option;
-}
-
 type commitment = {
     commit : Types.Hash;
     pubKey : ocPK;
+    feeAsset : ocAsset;
+    feeAmount : uint64 option;
 }
 
-type ocAsset =
+and ocAsset =
     | CommitToken of commitment
     | AttestToken of commitment
     | ZenToken
     | OtherToken
+
+type ocData = {
+    _Commit       : Types.Hash               option;
+    _OraclePubKey : ocPK                     option;
+    _Recipient    : Abs.AbsLock<ocPK, ocCid> option;
+    _FeeAsset     : ocAsset                  option;
+    _FeeAmount    : uint64                   option;
+}
 
 let CONTRACT_ID_ORACLE = Load.computeContractId "output/Oracle2.fst"
 let CONTRACT_ID_OTHER  = Load.computeContractId "../FixedPayout/output/FixedPayout.fst"
@@ -62,6 +66,12 @@ let ocMain, ocCost = Load.extractMainAndCost "output/Oracle2.dll"
 let FIELD_COMMIT             = "Commit"B
 let FIELD_ORACLE_PUB_KEY     = "OraclePubKey"B
 let FIELD_RECIPIENT          = "Recipient"B
+let FIELD_FEE_ASSET          = "FeeAsset"B
+let FIELD_FEE_AMOUNT         = "FeeAmount"B
+
+let fsToFstAsset (Types.Asset (Types.ContractId (version, assetType), subType)) = 
+   (version, Hash.bytes assetType, Hash.bytes subType)
+
 
 
 
@@ -109,20 +119,36 @@ let updateContractId (Consensus.Types.ContractId (v, Hash.Hash h)) s =
     |> Sha3.updateU32  v |> Zen.Cost.Realized.__force
     |> Sha3.updateHash h |> Zen.Cost.Realized.__force
 
-let hashCommit commit =
-    Sha3.empty
-    |> Sha3.updateHash (commit.commit |> Hash.bytes) |> Zen.Cost.Realized.__force
-    |> updatePublicKey (commit.pubKey |> realizePK)
-    |> Sha3.finalize                                 |> Zen.Cost.Realized.__force
+let updateAsset asset s =
+   s 
+   |> Sha3.updateAsset asset |> Zen.Cost.Realized.__force
 
-let hashAttest commit =
+let updateAmount amount s = 
+   s 
+   |> Sha3.updateU64 amount |> Zen.Cost.Realized.__force
+
+let rec hashCommit commit =
+   match commit.feeAmount with
+   | None ->
+      Sha3.empty
+      |> Sha3.updateHash (commit.commit |> Hash.bytes)  |> Zen.Cost.Realized.__force
+      |> updatePublicKey (commit.pubKey |> realizePK)
+      |> Sha3.finalize                                  |> Zen.Cost.Realized.__force
+   | Some amount ->
+      Sha3.empty
+      |> Sha3.updateHash (commit.commit   |> Hash.bytes)   |> Zen.Cost.Realized.__force
+      |> updatePublicKey (commit.pubKey   |> realizePK)
+      |> updateAsset     (commit.feeAsset |> realizeAsset |> Option.get |> fsToFstAsset)
+      |> updateAmount    amount
+      |> Sha3.finalize                                     |> Zen.Cost.Realized.__force
+
+and hashAttest commit =
     Sha3.empty
-    |> Sha3.updateHash (hashCommit commit)
+    |> Sha3.updateHash (hashCommit { commit with feeAmount = None })
     |> Zen.Cost.Realized.__force
     |> Sha3.finalize |> Zen.Cost.Realized.__force
 
-let realizeAsset asset : Option<Types.Asset> =
-    let (|@>) x f = Option.map f x
+and realizeAsset asset : Option<Types.Asset> =
     match asset with
     | CommitToken attest ->
         match hashCommit attest with | attestHash -> Some (Types.Asset (CONTRACT_ID_ORACLE, Hash.Hash attestHash))
@@ -131,7 +157,7 @@ let realizeAsset asset : Option<Types.Asset> =
     | ZenToken ->
         Some Consensus.Asset.Zen
     | OtherToken ->
-        failwith "not implemented yet"
+        Some (Types.Asset (CONTRACT_ID_OTHER, Hash.zero))
 
 let rec ocRealizer : Abs.Realizer<ocPK, ocCid, ocAsset, ocCommand, ocData> =
     {
@@ -145,10 +171,12 @@ let rec ocRealizer : Abs.Realizer<ocPK, ocCid, ocAsset, ocCommand, ocData> =
 
 and realizeData (data : ocData) =
     let rl = ocRealizer in
-    Input.MessageBody.emptyDict
+    Input.MessageBody.emptyDict ()
     |> AddInput.add_hash           FIELD_COMMIT             data._Commit
     |> AddRealized.add_pk       rl FIELD_ORACLE_PUB_KEY     data._OraclePubKey
     |> AddRealized.add_lock     rl FIELD_RECIPIENT          data._Recipient
+    |> AddRealized.add_asset    rl FIELD_FEE_ASSET          data._FeeAsset
+    |> AddInput.add_uint64         FIELD_FEE_AMOUNT         data._FeeAmount
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
@@ -163,17 +191,35 @@ and realizeData (data : ocData) =
 
 let fromString s =
     match Consensus.Hash.fromString s with
-    | Ok x -> Consensus.Hash.bytes x
-    | Error err -> failwithf "%s - %s" err s
+    | Some x -> Consensus.Hash.bytes x
+    | None -> failwithf "Couldn't parse hash from string - %s" s
 
 let commit001 = {
     commit = fromString "3e47241505bca37f3356fd8dda544c2a3c9c043601f147ea0c6da1362c85a472" |> Hash.Hash
     pubKey = PK_Oracle
+    feeAsset = ZenToken
+    feeAmount = None
 }
 
 let commit002 = {
     commit = fromString "3e47241505bca37f3356fd8dda544c2a3c9c043601f147ea0c6da1362c85a472" |> Hash.Hash
     pubKey = PK_Other
+    feeAsset = OtherToken
+    feeAmount = None
+}
+
+let commit003 = {
+    commit = fromString "3e47241505bca37f3356fd8dda544c2a3c9c043601f147ea0c6da1362c85a472" |> Hash.Hash
+    pubKey = PK_Oracle
+    feeAsset = ZenToken
+    feeAmount = Some 100UL
+}
+
+let commit004 = {
+    commit = fromString "3e47241505bca37f3356fd8dda544c2a3c9c043601f147ea0c6da1362c85a472" |> Hash.Hash
+    pubKey = PK_Other
+    feeAsset = OtherToken
+    feeAmount = Some 200UL
 }
 
 
@@ -187,46 +233,144 @@ let mutable ctr = 0
 
 printfn "\n\n======================================== Tokenization ==================================================================="
 
+// hashCommitData
+
 let _ =
    ctr <- ctr + 1
-   printfn "\n⬤ (%d) different data should give different hash" ctr
+   printfn "\n⬤ (%d) hashCommitData - different data should give different hash" ctr
    let pk1 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
    let pk2 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
 
    let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
    let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
 
-   let res1 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk1} |> Zen.Cost.Realized.__force
-   let res2 = Oracle2.hashCommitData {commit = commit2 ; oraclePubKey = pk2} |> Zen.Cost.Realized.__force
+   let res1 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk1 ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashCommitData {commit = commit2 ; oraclePubKey = pk2 ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
    if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
    if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
    else printfn "  ✅ PASSED"
 
 let _ =
    ctr <- ctr + 1
-   printfn "\n⬤ (%d) different data should give different hash (only pks are different)" ctr
+   printfn "\n⬤ (%d) hashCommitData - different data should give different hash (only pks are different)" ctr
    let pk1 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
    let pk2 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
 
    let commit = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
 
-   let res1 = Oracle2.hashCommitData {commit = commit ; oraclePubKey = pk1} |> Zen.Cost.Realized.__force
-   let res2 = Oracle2.hashCommitData {commit = commit ; oraclePubKey = pk2} |> Zen.Cost.Realized.__force
+   let res1 = Oracle2.hashCommitData {commit = commit ; oraclePubKey = pk1 ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashCommitData {commit = commit ; oraclePubKey = pk2 ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
    if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
    if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
    else printfn "  ✅ PASSED"
 
 let _ =
    ctr <- ctr + 1
-   printfn "\n⬤ (%d) different data should give different hash (only commits are different)" ctr
+   printfn "\n⬤ (%d) hashCommitData - different data should give different hash (only commits are different)" ctr
    let pk = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
 
    let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
    let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
 
-   let res1 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk} |> Zen.Cost.Realized.__force
-   let res2 = Oracle2.hashCommitData {commit = commit2 ; oraclePubKey = pk} |> Zen.Cost.Realized.__force
+   let res1 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashCommitData {commit = commit2 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
    if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) hashCommitData - when there is a a fee amount specified both the fee amount and the fee asset should be hashed (different assets)" ctr
+   let pk = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+   let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
+
+   let res1 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = Some 1UL} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk ; feeAsset = fsToFstAsset (Types.Asset (CONTRACT_ID_OTHER, Hash.zero)) ; feeAmount = Some 1UL} |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) hashCommitData - when there is a a fee amount specified both the fee amount and the fee asset should be hashed (different amounts)" ctr
+   let pk = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+   let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
+
+   let res1 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = Some 1UL} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashCommitData {commit = commit1 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = Some 2UL} |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+// hashAttestData
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) hashAttestData - different data should give different hash" ctr
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+   let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
+
+   let res1 = Oracle2.hashAttestData {commit = commit1 ; oraclePubKey = pk1 ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashAttestData {commit = commit2 ; oraclePubKey = pk2 ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) hashAttestData - different data should give different hash (only pks are different)" ctr
+   let pk1 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+   let pk2 = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+
+   let res1 = Oracle2.hashAttestData {commit = commit ; oraclePubKey = pk1 ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashAttestData {commit = commit ; oraclePubKey = pk2 ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
+   if pk1 = pk2 then failwith "error: pk1 = pk2. this should rarely happen - please run the test again"
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) hashAttestData - different data should give different hash (only commits are different)" ctr
+   let pk = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+   let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
+
+   let res1 = Oracle2.hashAttestData {commit = commit1 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashAttestData {commit = commit2 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = None} |> Zen.Cost.Realized.__force
+   if res1 = res2 then printfn "  ⛔ FAILED - different data but same hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) hashAttestData - when there is a a fee amount specified it shouldn't affect hashing (different assets)" ctr
+   let pk = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+   let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
+
+   let res1 = Oracle2.hashAttestData {commit = commit1 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = Some 1UL} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashAttestData {commit = commit1 ; oraclePubKey = pk ; feeAsset = fsToFstAsset (Types.Asset (CONTRACT_ID_ORACLE, Hash.zero)) ; feeAmount = Some 1UL} |> Zen.Cost.Realized.__force
+   if res1 <> res2 then printfn "  ⛔ FAILED - this difference shouldn't affect hash"
+   else printfn "  ✅ PASSED"
+
+let _ =
+   ctr <- ctr + 1
+   printfn "\n⬤ (%d) hashAttestData - when there is a a fee amount specified it shouldn't affect hashing (different amounts)" ctr
+   let pk = Consensus.ZFStar.fsToFstPublicKey (generatePublicKey())
+
+   let commit1 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 1uy ; 2uy ; 3uy |]
+   let commit2 = Consensus.Hash.bytes <| Consensus.Hash.compute [| 7uy ; 6uy ; 5uy |]
+
+   let res1 = Oracle2.hashAttestData {commit = commit1 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = Some 1UL} |> Zen.Cost.Realized.__force
+   let res2 = Oracle2.hashAttestData {commit = commit1 ; oraclePubKey = pk ; feeAsset = Zen.Asset.zenAsset ; feeAmount = Some 2UL} |> Zen.Cost.Realized.__force
+   if res1 <> res2 then printfn "  ⛔ FAILED - this difference shouldn't affect hash"
    else printfn "  ✅ PASSED"
 
 
@@ -261,6 +405,8 @@ run_test "valid commit - no OraclePubKey"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = None
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -270,6 +416,76 @@ run_test "valid commit - no OraclePubKey"
     } |> should_PASS_with_tx
             [ hasMint (Some <| CommitToken commit001) (Some 1UL)
             ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "valid commit - with FeeAsset but no FeeAmount"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Commit
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Oracle
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = None
+                  _Recipient    = None
+                  _FeeAsset     = Some ZenToken
+                  _FeeAmount    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "valid commit - with FeeAmount but no FeeAsset"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Commit
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Oracle
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit003.commit
+                  _OraclePubKey = None
+                  _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = commit003.feeAmount
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| CommitToken commit003) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit003) (Some 1UL)
             ]
             ocRealizer
     end
@@ -294,6 +510,8 @@ run_test "valid commit - same OraclePubKey"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = Some commit001.pubKey
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -327,6 +545,8 @@ run_test "valid commit - other OraclePubKey"
                   _Commit       = Some commit002.commit
                   _OraclePubKey = Some commit002.pubKey
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -360,6 +580,8 @@ run_test "invalid commit - no Commit field"
                   _Commit       = None
                   _OraclePubKey = Some commit001.pubKey
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -389,6 +611,8 @@ run_test "invalid commit - no sender"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = Some commit001.pubKey
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -396,6 +620,37 @@ run_test "invalid commit - no sender"
          state       =
             None
     } |> should_FAIL_with "Sender must be a public key"
+    end
+
+run_test "invalid commit - FeeAmount of 0"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Commit
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Oracle
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit003.commit
+                  _OraclePubKey = None
+                  _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = Some 0UL
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL
     end
 
 
@@ -430,6 +685,8 @@ run_test "valid attest - no recipient (attestation token should be sent to sende
                   _Commit       = Some commit001.commit
                   _OraclePubKey = Some PK_Oracle
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -467,6 +724,8 @@ run_test "valid attest - recipient is sender"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = Some PK_Oracle
                   _Recipient    = Some (Abs.AbsPK PK_Other)
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -504,6 +763,8 @@ run_test "valid attest - recipient is PK"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = Some PK_Oracle
                   _Recipient    = Some (Abs.AbsPK PK_Oracle)
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -540,6 +801,8 @@ run_test "valid attest - recipient is contract"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = Some PK_Oracle
                   _Recipient    = Some (Abs.AbsContract <| Abs.OtherContract CID_Other)
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -554,6 +817,193 @@ run_test "valid attest - recipient is contract"
             ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
             ]
             ocRealizer
+    end
+
+run_test "valid attest - with FeeAsset specified but no FeeAmount"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit001.commit
+                  _OraclePubKey = Some commit001.pubKey
+                  _Recipient    = None
+                  _FeeAsset     = Some ZenToken
+                  _FeeAmount    = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit001, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| AttestToken commit001) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
+run_test "valid attest - with FeeAmount specified and provided fee, no FeeAsset specified (should be Zen)"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Other) ZenToken (commit003.feeAmount |> Option.get)
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit003.commit
+                  _OraclePubKey = Some commit003.pubKey
+                  _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = commit003.feeAmount
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit003, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit003) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| AttestToken commit003) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit003) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit003) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK commit003.pubKey) (Some <| ZenToken) commit003.feeAmount
+            ]
+            ocRealizer
+    end
+
+run_test "valid attest - with FeeAmount specified and provided fee, and FeeAsset specified"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Oracle) commit004.feeAsset (commit004.feeAmount |> Option.get)
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit004.commit
+                  _OraclePubKey = Some commit004.pubKey
+                  _Recipient    = None
+                  _FeeAsset     = Some commit004.feeAsset
+                  _FeeAmount    = commit004.feeAmount
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit004, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| AttestToken commit004) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK commit004.pubKey) (Some <| commit004.feeAsset) commit004.feeAmount
+            ]
+            ocRealizer
+    end
+
+run_test "invalid attest - with FeeAmount specified, no FeeAsset, and no provided fee"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit003.commit
+                  _OraclePubKey = Some PK_Oracle
+                  _Recipient    = None
+                  _FeeAsset     = Some commit003.feeAsset
+                  _FeeAmount    = commit003.feeAmount
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit003, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL
+    end
+
+run_test "invalid attest - with FeeAmount and FeeAsset specified, but no provided fee"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit004.commit
+                  _OraclePubKey = Some commit004.pubKey
+                  _Recipient    = None
+                  _FeeAsset     = Some commit004.feeAsset
+                  _FeeAmount    = commit004.feeAmount
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit004, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL
     end
 
 run_test "invalid attest - no Commit"
@@ -576,6 +1026,8 @@ run_test "invalid attest - no Commit"
                   _Commit       = None
                   _OraclePubKey = Some PK_Oracle
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -606,6 +1058,8 @@ run_test "invalid attest - no OraclePubKey"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = None
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -636,6 +1090,8 @@ run_test "valid attest - no recipient and anonymous sender"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = Some PK_Oracle
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -666,6 +1122,8 @@ run_test "invalid attest - no commit token"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = Some PK_Oracle
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
@@ -695,6 +1153,8 @@ run_test "invalid attest - wrong commit token"
                   _Commit       = Some commit001.commit
                   _OraclePubKey = Some PK_Oracle
                   _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = None
               }
          wallet      =
             Input.Wallet.empty
