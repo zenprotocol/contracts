@@ -350,7 +350,7 @@ let attestTx assets sender cid w data txSkel = // 39
     ret txSkel
     >>= (liftCost << TX.mint 1UL assets.attestation) // 64
     >>= (liftCost << TX.lockToAddress assets.attestation 1UL data.recipient) // 64
-    >>= (ofOptionT "Could not spend from wallet" << TX.fromWallet assets.commitment 1UL cid w) // W.size w * 128 + 192
+    >>= (ofOptionT "Data wasn't committed" << TX.fromWallet assets.commitment 1UL cid w) // W.size w * 128 + 192
     >>= (liftCost << TX.lockToContract assets.commitment 1UL cid) // 64
     >>= addFee sender data // 1338
 

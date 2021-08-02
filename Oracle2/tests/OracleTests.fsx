@@ -974,7 +974,7 @@ run_test "invalid attest - with FeeAmount specified, no FeeAsset, and no provide
             |> Input.Wallet.realize ocRealizer
          state       =
             None
-    } |> should_FAIL
+    } |> should_FAIL_with "Insufficient oracle fee"
     end
 
 run_test "invalid attest - with FeeAmount and FeeAsset specified, but no provided fee"
@@ -1007,7 +1007,41 @@ run_test "invalid attest - with FeeAmount and FeeAsset specified, but no provide
             |> Input.Wallet.realize ocRealizer
          state       =
             None
-    } |> should_FAIL
+    } |> should_FAIL_with "Insufficient oracle fee"
+    end
+
+run_test "invalid attest - with FeeAmount and FeeAsset specified, but insufficient fee"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Oracle) commit004.feeAsset 1UL
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit004.commit
+                  _OraclePubKey = Some commit004.pubKey
+                  _Recipient    = None
+                  _FeeAsset     = Some commit004.feeAsset
+                  _FeeAmount    = commit004.feeAmount
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit004, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient oracle fee"
     end
 
 run_test "invalid attest - no Commit"
@@ -1134,7 +1168,7 @@ run_test "invalid attest - no commit token"
             |> Input.Wallet.realize ocRealizer
          state       =
             None
-    } |> should_FAIL_with "Could not spend from wallet"
+    } |> should_FAIL_with "Data wasn't committed"
     end
 
 run_test "invalid attest - wrong commit token"
@@ -1166,5 +1200,5 @@ run_test "invalid attest - wrong commit token"
             |> Input.Wallet.realize ocRealizer
          state       =
             None
-    } |> should_FAIL_with "Could not spend from wallet"
+    } |> should_FAIL_with "Data wasn't committed"
     end
