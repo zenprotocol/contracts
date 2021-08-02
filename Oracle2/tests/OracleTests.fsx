@@ -455,6 +455,41 @@ run_test "valid commit - with FeeAsset but no FeeAmount"
             ocRealizer
     end
 
+run_test "valid commit - FeeAmount of 0"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Commit
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Oracle
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit       = Some commit003.commit
+                  _OraclePubKey = None
+                  _Recipient    = None
+                  _FeeAsset     = None
+                  _FeeAmount    = Some 0UL
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| CommitToken commit001) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit001) (Some 1UL)
+            ]
+            ocRealizer
+    end
+
 run_test "valid commit - with FeeAmount but no FeeAsset"
     begin
     Input.feedContract ocMain CONTRACT_ID_ORACLE {
@@ -588,7 +623,7 @@ run_test "invalid commit - no Commit field"
             |> Input.Wallet.realize ocRealizer
          state       =
             None
-    } |> should_FAIL_with "Could not parse Commit"
+    } |> should_FAIL_with "Couldn't find Commit in message body"
     end
 
 run_test "invalid commit - no sender"
@@ -620,37 +655,6 @@ run_test "invalid commit - no sender"
          state       =
             None
     } |> should_FAIL_with "Sender must be a public key"
-    end
-
-run_test "invalid commit - FeeAmount of 0"
-    begin
-    Input.feedContract ocMain CONTRACT_ID_ORACLE {
-         txSkel      =
-            Input.TxSkeleton.Abstract.empty
-            |> Input.TxSkeleton.Abstract.realize ocRealizer
-         context     =
-            Input.Context.empty
-            |> Input.Context.realize ocRealizer
-         command     =
-            CMD_Commit
-            |> realizeCommand
-         sender      =
-            Abs.AbsPKSender PK_Oracle
-            |> Input.Sender.realize ocRealizer
-         messageBody =
-             realizeData {
-                  _Commit       = Some commit003.commit
-                  _OraclePubKey = None
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = Some 0UL
-              }
-         wallet      =
-            Input.Wallet.empty
-            |> Input.Wallet.realize ocRealizer
-         state       =
-            None
-    } |> should_FAIL
     end
 
 

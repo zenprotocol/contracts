@@ -16,6 +16,7 @@ module U64 = FStar.UInt64
 module Asset = Zen.Asset
 
 
+
 type commitData =
     { commit       : hash
     ; oraclePubKey : publicKey
@@ -24,8 +25,9 @@ type commitData =
     }
 
 type attestData =
-    { commitData : commitData
-    ; recipient  : lock
+    { commitData    : commitData
+    ; recipient     : lock
+    ; returnAddress : option lock
     }
 
 type assets =
@@ -72,48 +74,6 @@ let hashCPK cpk = // 6
 -------------------------------------------------------------------------------
 *)
 
-val parseDict: option data -> result (Dict.t data) `cost` 12
-let parseDict data = // 8
-    match data with
-    | Some data ->
-        data
-        |> tryDict // 4
-        |> RT.ofOptionT "Data parsing failed - the message body isn't a dictionary"
-    | None ->
-        RT.incFailw 4 "Data parsing failed - the message body is empty"
-
-val parseFeeAsset : Dict.t data -> asset `cost` 145
-let parseFeeAsset dict  = // 10
-    Dict.tryFind "FeeAsset" dict // 64
-    >?= tryString // 2
-    >?= Asset.parse // 64
-    >>= OT.maybeT Asset.zenAsset ret // 5
-
-val parseFeeAmount : Dict.t data -> option U64.t `cost` 70
-let parseFeeAmount dict = // 4
-    Dict.tryFind "FeeAmount" dict // 64
-    >?= tryU64 // 2
-
-val parseCommit : Dict.t data -> result hash `cost` 73
-let parseCommit dict = // 7
-    Dict.tryFind "Commit" dict // 64
-    >?= tryHash // 2
-    |> RT.ofOptionT "Could not parse Commit"
-
-val parseCommitData : publicKey -> option data -> commitData `RT.t` 318
-let parseCommitData sender msgBody = // (3 + 3 + 12)
-    let open RT in
-    parseDict msgBody >>= (fun dict   -> // 12
-    parseCommit dict  >>= (fun commit -> // 73
-        let! feeAsset  = parseFeeAsset  dict in // 145
-        let! feeAmount = parseFeeAmount dict in // 70
-        { commit       = commit
-        ; oraclePubKey = sender
-        ; feeAsset     = feeAsset
-        ; feeAmount    = feeAmount
-        } |> ret
-    ))
-
 val senderToLock : sender -> lock `OT.t` 551
 let senderToLock sender = // 15
     begin match sender with
@@ -131,59 +91,119 @@ let senderToLock sender = // 15
         |> incRet 536
     end
 
-val parseAttestData : sender -> option data -> attestData `RT.t` 1013
-let parseAttestData sender msgBody = // 55
-    begin match msgBody with
-    | Some (Collection (Dict dict)) ->
-        let! commit       = Dict.tryFind "Commit"       dict in // 64
-        let! oraclePubKey = Dict.tryFind "OraclePubKey" dict in // 64
-        let! recipient    = Dict.tryFind "Recipient"    dict in // 64
-        let! feeAsset     = parseFeeAsset               dict in // 145
-        let! feeAmount    = parseFeeAmount              dict in // 70
-        let! senderLock   = senderToLock sender              in // 551
-        begin match commit with
-        | Some (Hash commit) ->
-            begin match oraclePubKey with
-            | Some (PublicKey pk) ->
-                begin match recipient with
-                | Some (Lock recip) ->
-                    { commitData =
-                        { commit       = commit
-                        ; oraclePubKey = pk
-                        ; feeAsset     = feeAsset
-                        ; feeAmount    = feeAmount
-                        }
-                    ; recipient = recip
-                    } |> RT.ok
-                | Some _ ->
-                    RT.failw "Recipient (if specified) must be a lock"
-                | None ->
-                    begin match senderLock with
-                    | Some lock ->
-                        { commitData =
-                            { commit       = commit
-                            ; oraclePubKey = pk
-                            ; feeAsset     = feeAsset
-                            ; feeAmount    = feeAmount
-                            }
-                        ; recipient = lock
-                        } |> RT.ok
-                    | None ->
-                        RT.failw "When the recipient is unspecified the sender can't be anonymous"
-                    end
-                end
-            | Some _ ->
-                RT.failw "OraclePubKey must be a public key"
-            | None ->
-                RT.failw "Couldn't find OraclePubKey in message body"
-            end
-        | Some _ ->
-            RT.failw "Commit must be an hash"
+val parseDict: option data -> Dict.t data `RT.t` 12
+let parseDict data = // 8
+    match data with
+    | Some data ->
+        data
+        |> tryDict // 4
+        |> RT.ofOptionT "Data parsing failed - the message body isn't a dictionary"
+    | None ->
+        RT.incFailw 4 "Data parsing failed - the message body is empty"
+
+val parseCommit : Dict.t data -> hash `RT.t` 78
+let parseCommit dict = // 12
+    let open RT in
+    ret dict
+    >>= (Dict.tryFind "Commit" >> ofOptionT "Couldn't find Commit in message body") // 64
+    >>= (tryHash               >> ofOptionT "Commit must be an hash") // 2
+
+val parseOraclePubKey : Dict.t data -> publicKey `RT.t` 78
+let parseOraclePubKey dict = // 12
+    let open RT in
+    ret dict
+    >>= (Dict.tryFind "OraclePubKey" >> ofOptionT "Couldn't find OraclePubKey in message body") // 64
+    >>= (tryPublicKey                >> ofOptionT "OraclePubKey must be a public key") // 2
+
+val parseRecipient : sender -> Dict.t data -> lock `RT.t` 632
+let parseRecipient sender dict = // 17
+    let open RT in
+    let! recipient = Dict.tryFind "Recipient" dict in // 64
+    begin match recipient with
+    | Some (Lock recip) ->
+        incRet 551 recip
+    | Some _ ->
+        incFailw 551 "Recipient (if specified) must be a lock"
+    | None ->
+        let! senderLock = senderToLock sender in // 551
+        match senderLock with
+        | Some recip ->
+            ret recip
         | None ->
-            RT.failw "Couldn't find Commit in message body"
-        end
-    | _ -> RT.autoFailw "MessageBody must be a dictionary."
+            failw "When the recipient is unspecified the sender can't be anonymous"
     end
+
+val parseReturnAddress : Dict.t data -> option lock `RT.t` 76
+let parseReturnAddress dict = // 12
+    let open RT in
+    let! returnAddress = Dict.tryFind "ReturnAddress" dict in // 64
+    match returnAddress with
+    | None ->
+        ret None
+    | Some (Lock address) ->
+        ret (Some address)
+    | Some _ ->
+        failw "ReturnAddress (if specified) must be a lock"
+
+val parseFeeAsset : Dict.t data -> asset `RT.t` 142
+let parseFeeAsset dict  = // 14
+    let open RT in
+    let! feeAsset = Dict.tryFind "FeeAsset" dict in // 64
+    match feeAsset with
+    | None ->
+        incRet 64 Asset.zenAsset
+    | Some (String asset) ->
+        Asset.parse asset // 64
+        |> ofOptionT "Invalid FeeAsset - failed to parse asset string"
+    | Some _ ->
+        incFailw 64 "FeeAsset must be a string"
+
+val parseFeeAmount : Dict.t data -> option U64.t `RT.t` 81
+let parseFeeAmount dict = // 17
+    let open RT in
+    let! feeAmount = Dict.tryFind "FeeAmount" dict in // 64
+    match feeAmount with
+    | None ->
+        ret None
+    | Some (U64 amount) ->
+        if amount `U64.gt` 0UL then ret (Some amount) else ret None
+    | Some _ ->
+        failw "FeeAmount (if specified) must be a UInt64"
+
+val parseCommitData : publicKey -> option data -> commitData `RT.t` 331
+let parseCommitData pk msgBody = // 18
+    let open RT in
+    parseDict msgBody >>= (fun dict   -> // 12
+    parseCommit    dict >>= (fun commit    -> // 78
+    parseFeeAsset  dict >>= (fun feeAsset  -> // 142
+    parseFeeAmount dict >>= (fun feeAmount -> // 81
+        { commit       = commit
+        ; oraclePubKey = pk
+        ; feeAsset     = feeAsset
+        ; feeAmount    = feeAmount
+        } |> ret
+    ))))
+
+val parseAttestData : sender -> option data -> attestData `RT.t` 1130
+let parseAttestData sender msgBody = // 31
+    let open RT in
+    parseDict msgBody >>= (fun dict   -> // 12
+    parseCommit           dict >>= (fun commit        -> // 78
+    parseOraclePubKey     dict >>= (fun oraclePubKey  -> // 78
+    parseRecipient sender dict >>= (fun recipient     -> // 632
+    parseReturnAddress    dict >>= (fun returnAddress -> // 76
+    parseFeeAsset         dict >>= (fun feeAsset      -> // 142
+    parseFeeAmount        dict >>= (fun feeAmount     -> // 81
+        { commitData =
+            { commit       = commit
+            ; oraclePubKey = oraclePubKey
+            ; feeAsset     = feeAsset
+            ; feeAmount    = feeAmount
+            }
+        ; recipient     = recipient
+        ; returnAddress = returnAddress
+        } |> ret
+    )))))))
 
 
 
@@ -255,18 +275,18 @@ val commit :
   -> sender
   -> option data
   -> txSkeleton
-  -> CR.t `cost` 2629
+  -> CR.t `cost` 2642
 let commit cid sender msgBody txSkel = // 16
     let open RT in
     let! tx =
         begin match sender with
         | PK pk ->
             ret msgBody
-            >>= parseCommitData pk                  // 318
+            >>= parseCommitData pk                  // 331
             >>= (liftCost << dataCommit txSkel cid) // 2292
         | _ ->
             "Sender must be a public key"
-            |> RT.incFailw 2610
+            |> RT.incFailw 2623
         end
     in CR.ofResultTxSkel tx // 3
 
@@ -278,50 +298,83 @@ let commit cid sender msgBody txSkel = // 16
 -------------------------------------------------------------------------------
 *)
 
+val returnChange : attestData -> sender -> U64.t -> U64.t -> txSkeleton -> txSkeleton `RT.t` 637
+let returnChange data sender available fee txSkel = // 27
+    let open RT in
+    if available `U64.gt` fee then
+        let change = available `U64.sub` fee in
+        match data.returnAddress with
+        | Some address ->
+            TX.lockToAddress data.commitData.feeAsset change address txSkel // 64
+            |> liftCost |> inc 546
+        | None ->
+            match sender with
+            | PK pk ->
+                TX.lockToPublicKey data.commitData.feeAsset change pk txSkel // 610
+                |> liftCost
+            | Contract cid ->
+                TX.lockToContract data.commitData.feeAsset change cid txSkel // 64
+                |> liftCost |> inc 546
+            | Anonymous ->
+                "When the sender is anonymous you must provide a returnAddress"
+                |> incFailw 610
+    else if available `U64.eq` fee then
+        txSkel
+        |> incRet 610
+    else
+        "Insufficient oracle fee"
+        |> incFailw 610
+
+val addFee : sender -> attestData -> txSkeleton -> txSkeleton `RT.t` 1338
+let addFee sender data txSkel = // 27
+    match data.commitData.feeAmount with
+    | Some fee ->
+        let! available = TX.getAvailableTokens data.commitData.feeAsset txSkel in // 64
+        ret txSkel
+        >>= TX.lockToPublicKey data.commitData.feeAsset fee data.commitData.oraclePubKey // 610
+        >>= returnChange data sender available fee // 637
+    | None ->
+        txSkel
+        |> RT.incRet 1311
+
 val attestTx :
     assets
+    -> sender
     -> contractId
     -> (w : wallet)
     -> attestData
     -> txSkeleton
-    -> txSkeleton `OT.t` (0 + 64 + 64 + (Zen.Wallet.size w * 128 + 192) + 64 + 610 + 48)
-let attestTx assets cid (w : wallet) (data : attestData) txSkel = // 48
-    let open OT in
+    -> txSkeleton `RT.t` (0 + 64 + 64 + (W.size w * 128 + 192) + 64 + 1338 + 39)
+let attestTx assets sender cid w data txSkel = // 39
+    let open RT in
     ret txSkel
     >>= (liftCost << TX.mint 1UL assets.attestation) // 64
     >>= (liftCost << TX.lockToAddress assets.attestation 1UL data.recipient) // 64
-    >>= TX.fromWallet assets.commitment 1UL cid w // W.size w * 128 + 192
+    >>= (ofOptionT "Could not spend from wallet" << TX.fromWallet assets.commitment 1UL cid w) // W.size w * 128 + 192
     >>= (liftCost << TX.lockToContract assets.commitment 1UL cid) // 64
-    >>= begin match data.commitData.feeAmount with
-        | Some amount ->
-            TX.lockToPublicKey data.commitData.feeAsset amount data.commitData.oraclePubKey // 610
-            >> liftCost
-        | None ->
-            incRet 610
-            >> liftCost
-        end
+    >>= addFee sender data // 1338
 
 val dataAttest' :
-    contractId
+    sender
+    -> contractId
     -> (w : wallet)
     -> txSkeleton
     -> attestData
-    -> txSkeleton `RT.t` (2150 + (0 + (0 + 64 + 64 + (W.size w * 128 + 192) + 64 + 610 + 48) + 0) + 15)
-let dataAttest' cid w txSkel data = // 16
+    -> txSkeleton `RT.t` (2150 + (0 + 64 + 64 + (W.size w * 128 + 192) + 64 + 1338 + 39) + 11)
+let dataAttest' sender cid w txSkel data = // 16
     let! assets = mkAssets cid data.commitData in // 2150
-    ret txSkel
-    >>= attestTx assets cid w data // ...
-    >>= RT.ofOption "Could not spend from wallet"
+    attestTx assets sender cid w data txSkel // ...
 
 val dataAttest :
-    contractId
+    sender
+    -> contractId
     -> (w : wallet)
     -> txSkeleton
     -> attestData
-    -> txSkeleton `RT.t` (W.size w * 128 + 3213)
-let dataAttest cid w txSkel data = // 6
-    dataAttest' cid w txSkel data
-    |> (fun x -> x <: txSkeleton `RT.t` (W.size w * 128 + 3207))
+    -> txSkeleton `RT.t` (W.size w * 128 + 3929)
+let dataAttest sender cid w txSkel data = // 7
+    dataAttest' sender cid w txSkel data
+    |> (fun x -> x <: txSkeleton `RT.t` (W.size w * 128 + 3922))
 
 val attest :
     contractId ->
@@ -329,12 +382,12 @@ val attest :
     sender ->
     option data ->
     txSkeleton ->
-    CR.t `cost` (W.size w * 128 + 4239)
-let attest cid w sender msgBody txSkel = // 10
+    CR.t `cost` (W.size w * 128 + 5073)
+let attest cid w sender msgBody txSkel = // 11
     let open RT in
     let! tx =
-        parseAttestData sender msgBody // 1013
-        >>= dataAttest cid w txSkel // W.size w * 128 + 3213
+        parseAttestData sender msgBody // 1130
+        >>= dataAttest sender cid w txSkel // W.size w * 128 + 3929
     in CR.ofResultTxSkel tx // 3
 
 
@@ -356,22 +409,22 @@ val main :
     -> state   : option data
     -> CR.t `cost`
         begin match command with
-        | "Commit" -> 2637
-        | "Attest" -> W.size w * 128 + 4247
+        | "Commit" -> 2642 + 8
+        | "Attest" -> W.size w * 128 + 5073 + 8
         | _        -> 8
         end
 let main txSkel _ cid command sender msgBody w _ = // 8
     begin match command with
     | "Commit" ->
-        commit cid sender msgBody txSkel // 2629
+        commit cid sender msgBody txSkel // 2642
         <: CR.t `cost`
             begin match command with
-            | "Commit" -> 2629
-            | "Attest" -> W.size w * 128 + 4239
+            | "Commit" -> 2642
+            | "Attest" -> W.size w * 128 + 5073
             | _        -> 0
             end
     | "Attest" ->
-        attest cid w sender msgBody txSkel // W.size w * 128 + 4239
+        attest cid w sender msgBody txSkel // W.size w * 128 + 5073
     | _ ->
         RT.failw "Command not recognized"
     end
@@ -387,8 +440,8 @@ val cf :
     -> nat `cost` 10
 let cf _ _ command _ _ w _ = // 10
     begin match command with
-    | "Commit" -> 2637
-    | "Attest" -> W.size w * 128 + 4247
+    | "Commit" -> 2650
+    | "Attest" -> W.size w * 128 + 5081
     | _        -> 8
     end
     |> ret
