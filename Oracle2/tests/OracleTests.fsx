@@ -45,11 +45,12 @@ and ocAsset =
     | OtherToken
 
 type ocData = {
-    _Commit       : Types.Hash               option;
-    _OraclePubKey : ocPK                     option;
-    _Recipient    : Abs.AbsLock<ocPK, ocCid> option;
-    _FeeAsset     : ocAsset                  option;
-    _FeeAmount    : uint64                   option;
+    _Commit        : Types.Hash               option;
+    _OraclePubKey  : ocPK                     option;
+    _Recipient     : Abs.AbsLock<ocPK, ocCid> option;
+    _FeeAsset      : ocAsset                  option;
+    _FeeAmount     : uint64                   option;
+    _ReturnAddress : Abs.AbsLock<ocPK, ocCid> option;
 }
 
 let CONTRACT_ID_ORACLE = Load.computeContractId "output/Oracle2.fst"
@@ -68,6 +69,7 @@ let FIELD_ORACLE_PUB_KEY     = "OraclePubKey"B
 let FIELD_RECIPIENT          = "Recipient"B
 let FIELD_FEE_ASSET          = "FeeAsset"B
 let FIELD_FEE_AMOUNT         = "FeeAmount"B
+let FIELD_RETURN_ADDRESS     = "ReturnAddress"B
 
 let fsToFstAsset (Types.Asset (Types.ContractId (version, assetType), subType)) = 
    (version, Hash.bytes assetType, Hash.bytes subType)
@@ -177,6 +179,7 @@ and realizeData (data : ocData) =
     |> AddRealized.add_lock     rl FIELD_RECIPIENT          data._Recipient
     |> AddRealized.add_asset    rl FIELD_FEE_ASSET          data._FeeAsset
     |> AddInput.add_uint64         FIELD_FEE_AMOUNT         data._FeeAmount
+    |> AddRealized.add_lock     rl FIELD_RETURN_ADDRESS     data._ReturnAddress
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
@@ -402,11 +405,12 @@ run_test "valid commit - no OraclePubKey"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = None
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = None
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -437,11 +441,12 @@ run_test "valid commit - with FeeAsset but no FeeAmount"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = None
-                  _Recipient    = None
-                  _FeeAsset     = Some ZenToken
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = None
+                  _Recipient     = None
+                  _FeeAsset      = Some ZenToken
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -472,11 +477,12 @@ run_test "valid commit - FeeAmount of 0"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit003.commit
-                  _OraclePubKey = None
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = Some 0UL
+                  _Commit        = Some commit003.commit
+                  _OraclePubKey  = None
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = Some 0UL
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -507,11 +513,12 @@ run_test "valid commit - with FeeAmount but no FeeAsset"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit003.commit
-                  _OraclePubKey = None
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = commit003.feeAmount
+                  _Commit        = Some commit003.commit
+                  _OraclePubKey  = None
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = commit003.feeAmount
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -542,11 +549,12 @@ run_test "valid commit - same OraclePubKey"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some commit001.pubKey
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some commit001.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -577,11 +585,12 @@ run_test "valid commit - other OraclePubKey"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit002.commit
-                  _OraclePubKey = Some commit002.pubKey
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit002.commit
+                  _OraclePubKey  = Some commit002.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -612,11 +621,12 @@ run_test "invalid commit - no Commit field"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = None
-                  _OraclePubKey = Some commit001.pubKey
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = None
+                  _OraclePubKey  = Some commit001.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -643,11 +653,12 @@ run_test "invalid commit - no sender"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some commit001.pubKey
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some commit001.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -686,11 +697,12 @@ run_test "valid attest - no recipient (attestation token should be sent to sende
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some PK_Oracle
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some PK_Oracle
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -725,11 +737,12 @@ run_test "valid attest - recipient is sender"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some PK_Oracle
-                  _Recipient    = Some (Abs.AbsPK PK_Other)
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some PK_Oracle
+                  _Recipient     = Some (Abs.AbsPK PK_Other)
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -764,11 +777,12 @@ run_test "valid attest - recipient is PK"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some PK_Oracle
-                  _Recipient    = Some (Abs.AbsPK PK_Oracle)
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some PK_Oracle
+                  _Recipient     = Some (Abs.AbsPK PK_Oracle)
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -802,11 +816,12 @@ run_test "valid attest - recipient is contract"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some PK_Oracle
-                  _Recipient    = Some (Abs.AbsContract <| Abs.OtherContract CID_Other)
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some PK_Oracle
+                  _Recipient     = Some (Abs.AbsContract <| Abs.OtherContract CID_Other)
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -840,11 +855,12 @@ run_test "valid attest - with FeeAsset specified but no FeeAmount"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some commit001.pubKey
-                  _Recipient    = None
-                  _FeeAsset     = Some ZenToken
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some commit001.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = Some ZenToken
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -880,11 +896,12 @@ run_test "valid attest - with FeeAmount specified and provided fee, no FeeAsset 
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit003.commit
-                  _OraclePubKey = Some commit003.pubKey
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = commit003.feeAmount
+                  _Commit        = Some commit003.commit
+                  _OraclePubKey  = Some commit003.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = commit003.feeAmount
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -921,11 +938,12 @@ run_test "valid attest - with FeeAmount specified and provided fee, and FeeAsset
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit004.commit
-                  _OraclePubKey = Some commit004.pubKey
-                  _Recipient    = None
-                  _FeeAsset     = Some commit004.feeAsset
-                  _FeeAmount    = commit004.feeAmount
+                  _Commit        = Some commit004.commit
+                  _OraclePubKey  = Some commit004.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = Some commit004.feeAsset
+                  _FeeAmount     = commit004.feeAmount
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -961,11 +979,12 @@ run_test "invalid attest - with FeeAmount specified, no FeeAsset, and no provide
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit003.commit
-                  _OraclePubKey = Some PK_Oracle
-                  _Recipient    = None
-                  _FeeAsset     = Some commit003.feeAsset
-                  _FeeAmount    = commit003.feeAmount
+                  _Commit        = Some commit003.commit
+                  _OraclePubKey  = Some PK_Oracle
+                  _Recipient     = None
+                  _FeeAsset      = Some commit003.feeAsset
+                  _FeeAmount     = commit003.feeAmount
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -994,11 +1013,12 @@ run_test "invalid attest - with FeeAmount and FeeAsset specified, but no provide
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit004.commit
-                  _OraclePubKey = Some commit004.pubKey
-                  _Recipient    = None
-                  _FeeAsset     = Some commit004.feeAsset
-                  _FeeAmount    = commit004.feeAmount
+                  _Commit        = Some commit004.commit
+                  _OraclePubKey  = Some commit004.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = Some commit004.feeAsset
+                  _FeeAmount     = commit004.feeAmount
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -1028,11 +1048,12 @@ run_test "invalid attest - with FeeAmount and FeeAsset specified, but insufficie
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit004.commit
-                  _OraclePubKey = Some commit004.pubKey
-                  _Recipient    = None
-                  _FeeAsset     = Some commit004.feeAsset
-                  _FeeAmount    = commit004.feeAmount
+                  _Commit        = Some commit004.commit
+                  _OraclePubKey  = Some commit004.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = Some commit004.feeAsset
+                  _FeeAmount     = commit004.feeAmount
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -1061,11 +1082,12 @@ run_test "invalid attest - no Commit"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = None
-                  _OraclePubKey = Some PK_Oracle
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = None
+                  _OraclePubKey  = Some PK_Oracle
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -1093,11 +1115,12 @@ run_test "invalid attest - no OraclePubKey"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = None
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = None
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -1125,11 +1148,12 @@ run_test "valid attest - no recipient and anonymous sender"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some PK_Oracle
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some PK_Oracle
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -1157,11 +1181,12 @@ run_test "invalid attest - no commit token"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some PK_Oracle
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some PK_Oracle
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -1188,11 +1213,12 @@ run_test "invalid attest - wrong commit token"
             |> Input.Sender.realize ocRealizer
          messageBody =
              realizeData {
-                  _Commit       = Some commit001.commit
-                  _OraclePubKey = Some PK_Oracle
-                  _Recipient    = None
-                  _FeeAsset     = None
-                  _FeeAmount    = None
+                  _Commit        = Some commit001.commit
+                  _OraclePubKey  = Some PK_Oracle
+                  _Recipient     = None
+                  _FeeAsset      = None
+                  _FeeAmount     = None
+                  _ReturnAddress = None
               }
          wallet      =
             Input.Wallet.empty
@@ -1201,4 +1227,238 @@ run_test "invalid attest - wrong commit token"
          state       =
             None
     } |> should_FAIL_with "Data wasn't committed"
+    end
+
+run_test "invalid attest - with FeeAmount and FeeAsset specified, insufficient fee and given return address"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Oracle) commit004.feeAsset 1UL
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit        = Some commit004.commit
+                  _OraclePubKey  = Some commit004.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = Some commit004.feeAsset
+                  _FeeAmount     = commit004.feeAmount
+                  _ReturnAddress = Some (Abs.AbsPK PK_Other)
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit004, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "Insufficient oracle fee"
+    end
+
+run_test "invalid attest - with FeeAmount and FeeAsset specified, sufficient fee, given return address but anoymous sender and no recipient"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Oracle) commit004.feeAsset 250UL
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsAnonymousSender
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit        = Some commit004.commit
+                  _OraclePubKey  = Some commit004.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = Some commit004.feeAsset
+                  _FeeAmount     = commit004.feeAmount
+                  _ReturnAddress = Some (Abs.AbsPK PK_Oracle)
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit004, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "When the recipient is unspecified the sender can't be anonymous"
+    end
+
+run_test "invalid attest - with FeeAmount and FeeAsset specified, sufficient fee but anoymous sender and no given return address"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Oracle) commit004.feeAsset 250UL
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsAnonymousSender
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit        = Some commit004.commit
+                  _OraclePubKey  = Some commit004.pubKey
+                  _Recipient     = Some (Abs.AbsPK PK_Other)
+                  _FeeAsset      = Some commit004.feeAsset
+                  _FeeAmount     = commit004.feeAmount
+                  _ReturnAddress = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit004, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_FAIL_with "When the sender is anonymous you must provide a returnAddress"
+    end
+
+run_test "valid attest - with FeeAmount and FeeAsset specified, sufficient fee, pk sender and given return address"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Oracle) commit004.feeAsset 250UL
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit        = Some commit004.commit
+                  _OraclePubKey  = Some commit004.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = Some commit004.feeAsset
+                  _FeeAmount     = commit004.feeAmount
+                  _ReturnAddress = Some (Abs.AbsPK PK_Oracle)
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit004, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| AttestToken commit004) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK commit004.pubKey) (Some <| commit004.feeAsset) commit004.feeAmount
+            ; hasOutput (Some <| Abs.AbsPK PK_Oracle) (Some <| commit004.feeAsset) (Some (250UL - Option.get commit004.feeAmount))
+            ]
+            ocRealizer
+    end
+
+run_test "valid attest - with FeeAmount and FeeAsset specified, sufficient fee, pk sender but no given return address"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Oracle) commit004.feeAsset 250UL
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsPKSender PK_Other
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit        = Some commit004.commit
+                  _OraclePubKey  = Some commit004.pubKey
+                  _Recipient     = None
+                  _FeeAsset      = Some commit004.feeAsset
+                  _FeeAmount     = commit004.feeAmount
+                  _ReturnAddress = None
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit004, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| AttestToken commit004) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK commit004.pubKey) (Some <| commit004.feeAsset) commit004.feeAmount
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| commit004.feeAsset) (Some (250UL - Option.get commit004.feeAmount))
+            ]
+            ocRealizer
+    end
+
+run_test "valid attest - with FeeAmount and FeeAsset specified, sufficient fee, anonymous sender and given return address"
+    begin
+    Input.feedContract ocMain CONTRACT_ID_ORACLE {
+         txSkel      =
+            Input.TxSkeleton.Abstract.empty
+            |> Input.TxSkeleton.Abstract.addInput (Abs.AbsPK PK_Oracle) commit004.feeAsset 250UL
+            |> Input.TxSkeleton.Abstract.realize ocRealizer
+         context     =
+            Input.Context.empty
+            |> Input.Context.realize ocRealizer
+         command     =
+            CMD_Attest
+            |> realizeCommand
+         sender      =
+            Abs.AbsAnonymousSender
+            |> Input.Sender.realize ocRealizer
+         messageBody =
+             realizeData {
+                  _Commit        = Some commit004.commit
+                  _OraclePubKey  = Some commit004.pubKey
+                  _Recipient     = Some (Abs.AbsPK PK_Other)
+                  _FeeAsset      = Some commit004.feeAsset
+                  _FeeAmount     = commit004.feeAmount
+                  _ReturnAddress = Some (Abs.AbsPK PK_Other)
+              }
+         wallet      =
+            Input.Wallet.empty
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit004, 1UL)
+            |> Input.Wallet.add (Abs.AbsContract Abs.ThisContract, CommitToken commit002, 1UL)
+            |> Input.Wallet.realize ocRealizer
+         state       =
+            None
+    } |> should_PASS_with_tx
+            [ hasMint (Some <| AttestToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| AttestToken commit004) (Some 1UL)
+            ; hasInput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsContract Abs.ThisContract) (Some <| CommitToken commit004) (Some 1UL)
+            ; hasOutput (Some <| Abs.AbsPK commit004.pubKey) (Some <| commit004.feeAsset) commit004.feeAmount
+            ; hasOutput (Some <| Abs.AbsPK PK_Other) (Some <| commit004.feeAsset) (Some (250UL - Option.get commit004.feeAmount))
+            ]
+            ocRealizer
     end
