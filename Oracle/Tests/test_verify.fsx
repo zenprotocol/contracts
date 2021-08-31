@@ -8,7 +8,7 @@ open Zen.Types
 module Cost = Zen.Cost.Realized
 
 // Contract Arguments
-let contractId = ContractId (Version0, Hash.fromString "b64cae81f046f75a462d7d8aa4a6dfb5e2a0a72b73987e33a0731f3d65ff4230" |> Result.get)
+let contractId = ContractId (Version0, Hash.fromString "b64cae81f046f75a462d7d8aa4a6dfb5e2a0a72b73987e33a0731f3d65ff4230" |> Option.get)
 
 let contractFn, costFn = System.Reflection.Assembly.LoadFrom "output/Oracle.dll"
                          |> Contract.getFunctions
@@ -41,7 +41,7 @@ let root =
     |> Zen.Types.Data.data.Hash
 
 let createData hash index =
-    let mutable dataDictionary = Zen.Dictionary.empty
+    let mutable dataDictionary = Zen.Dictionary.empty()
 
     dataDictionary <-
         Zen.Dictionary.add "Hash"B hash dataDictionary

@@ -99,7 +99,7 @@ let rec cgpRealizer : Abs.Realizer<cgpPK, cgpCid, cgpAsset, cgpCommand, cgpData>
 
 and realizeData (data : cgpData) =
     let rl = cgpRealizer in
-    Input.MessageBody.emptyDict
+    Input.MessageBody.emptyDict ()
     |> AddInput.add_list_with mkOutput FIELD_OUTPUTS data._Outputs
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection

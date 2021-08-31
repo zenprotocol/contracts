@@ -14,13 +14,13 @@ module Extracted  = Zen.Types.Extracted
 
 type CR = Result<(Consensus.TxSkeleton.T * Option<Consensus.Types.Message> * Zen.Types.Main.stateUpdate),string>
 
-#r "../output/Dex001.dll"
-open Dex001
+#r "../output/Dex.dll"
+open Dex
 
-module Dex       = Dex001
+module Dex       = Dex
 
-let CONTRACT_DLL = "output/Dex001.dll"
-let CONTRACT_SRC = "Dex001.fst"
+let CONTRACT_DLL = "output/Dex.dll"
+let CONTRACT_SRC = "Dex.fst"
 
 let CMD_MAKE   = "Make"
 let CMD_CANCEL = "Cancel"
@@ -322,7 +322,7 @@ let lockContract = Some <| Types.Contract contractID
 
 let lockDestroy = Some Types.Destroy
 
-let emptyDict = Zen.Dictionary.empty
+let emptyDict = Zen.Dictionary.empty()
 
 let addToDict (key, value) dict =
     Zen.Dictionary.add key value dict
