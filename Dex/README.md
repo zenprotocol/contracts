@@ -2,12 +2,12 @@
 
 ## Verify/Build
 
-To verify/record hints, run `zebra e --z3rlimit 8000000 Dex001.fst`.  
+To verify/record hints, run `zebra e --z3rlimit 8000000 Dex.fst`.  
 This command may take a long time to run the first time.
 Subsequent runs will be significantly faster.
 With an AMD Threadripper 1950x @4.0GHz, recording hints can take up to 2 minutes. Subsequent runs take ~11s.
 
-To build, run `zebra c --z3rlimit 8000000 Dex001.fst`
+To build, run `zebra c --z3rlimit 8000000 Dex.fst`
 
 ## How it works
 
@@ -89,16 +89,16 @@ The messageBody must consist of a dictionary which includes the following fields
 
 The transaction must place the order asset being taken and a sufficient amount of the underlying in ZenDex's contract wallet,
 and must lock an amount α of the order's pair asset to the contract, where
-<img src="/Dex001/tex/dfa94410d7549c4bea04465b580ed7cb.svg?invert_in_darkmode&sanitize=true" align=middle width=313.31309625pt height=29.369729400000022pt/>
+<img src="/Dex/tex/dfa94410d7549c4bea04465b580ed7cb.svg?invert_in_darkmode&sanitize=true" align=middle width=313.31309625pt height=29.369729400000022pt/>
 
 ## Notes
 
 Orders are expressed in terms of underlying amount and pair amount to allow for rational price ratios - eg. a trade of 5α for 7β, or 13β for 11γ.
 This is not easily expressed as a 'price per' with only integer arithmetic.
-The payout for a partial fill should, assuming arbitrarily divisible assets, be calculated as <img src="/Dex001/tex/dfa94410d7549c4bea04465b580ed7cb.svg?invert_in_darkmode&sanitize=true" align=middle width=313.31309625pt height=29.369729400000022pt/>
+The payout for a partial fill should, assuming arbitrarily divisible assets, be calculated as <img src="/Dex/tex/dfa94410d7549c4bea04465b580ed7cb.svg?invert_in_darkmode&sanitize=true" align=middle width=313.31309625pt height=29.369729400000022pt/>
 
 However, since we do not have arbitrarily divisible assets, we denote orders in the smallest unit of each asset and compute the floor, so that
-<img src="/Dex001/tex/0b20110fba6015084788cd321a32e3b5.svg?invert_in_darkmode&sanitize=true" align=middle width=330.8106846pt height=29.369729400000022pt/>
+<img src="/Dex/tex/0b20110fba6015084788cd321a32e3b5.svg?invert_in_darkmode&sanitize=true" align=middle width=330.8106846pt height=29.369729400000022pt/>
 
 The underlying amount, order total, and payment amount are all 64 bit unsigned integers.
 Version 0 ZF* contracts lack integer representations larger than this, and so we are tasked with implementing double-word arithmetic in order to calculate the payoff.
