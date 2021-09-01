@@ -95,7 +95,7 @@ and fpcAsset =
 
 let CONTRACT_ID_FP     = Load.computeContractId "output/FixedPayout.fst"
 let CONTRACT_ID_ORACLE = Load.computeContractId "../Oracle2/Oracle2.fst"
-let CONTRACT_ID_OTHER  = Load.computeContractId "../Dex001/Dex001.fst"
+let CONTRACT_ID_OTHER  = Load.computeContractId "../Dex/Dex.fst"
 
 let generatePublicKey() =
     Crypto.KeyPair.create() |> snd
