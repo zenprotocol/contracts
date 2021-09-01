@@ -34,6 +34,7 @@ let FIELD_MAKER_PUB_KEY     = "MakerPubKey"B
 let FIELD_NONCE             = "Nonce"B
 let FIELD_REQUESTED_PAYOUT  = "RequestedPayout"B
 let FIELD_RETURN_ADDRESS    = "returnAddress"B
+let FIELD_PROVIDED_AMOUNT   = "ProvidedAmount"B
 
 let ZEN_ASSET     = "000000000000000000000000000000000000000000000000000000000000000000000000"
 let XYZ_ASSET     = "000000000000000000012345678901234567899121323539832403208234092343590abc"
@@ -48,6 +49,7 @@ type orderData = {
     nonce            : uint64              option  // Used to distinguish duplicate orders
     requestedPayout  : uint64              option  // The amount of the underlying to pay out
     returnAddress    : Extracted.publicKey option
+    providedAmount   : uint64              option  // The amount of the pair supplied
 }
 
 let odataDefault = {
@@ -59,6 +61,7 @@ let odataDefault = {
     nonce            = None
     requestedPayout  = None
     returnAddress    = None
+    providedAmount   = None
 }
 
 
@@ -235,12 +238,6 @@ let checkTx (tests : (TxSkeleton -> Result<unit, TxFailure>) list) (cr : CR) : u
     | Error (TxFailure es) -> List.map (renderTxError >> failWith) es |> ignore
     | Error (ExecutionFailure e) -> failWith e
 
-let checkTx_should_FAIL (tests : (TxSkeleton -> Result<unit, TxFailure>) list) (cr : CR) : unit  =
-    match checkTx' tests cr with
-    | Ok() -> pass()
-    | Error (TxFailure es) -> List.map (renderTxError >> passWith) es |> ignore
-    | Error (ExecutionFailure e) -> passWith e
-
 let hasInput (lock : Types.Lock option) (asset : string option) (amount : uint64 option) (tx : TxSkeleton) : Result<unit,TxFailure> =
     List.exists
         (function
@@ -346,6 +343,7 @@ let mkOrderDict (odata : orderData) =
     |> match odata.nonce            with | None -> id | Some x -> addU64     FIELD_NONCE              x
     |> match odata.requestedPayout  with | None -> id | Some x -> addU64     FIELD_REQUESTED_PAYOUT   x
     |> match odata.returnAddress    with | None -> id | Some x -> addPKLock  FIELD_RETURN_ADDRESS     x
+    |> match odata.providedAmount   with | None -> id | Some x -> addU64     FIELD_PROVIDED_AMOUNT    x
 
 let mkOrderData =
     mkOrderDict
@@ -365,6 +363,7 @@ let convertMsgBodyToOrderData (msgBody : Zen.Types.Data.data) : orderData =
       nonce            = extract FIELD_NONCE             >>= (Zen.Data.tryU64       >> force)
       requestedPayout  = extract FIELD_REQUESTED_PAYOUT  >>= (Zen.Data.tryU64       >> force)
       returnAddress    = extract FIELD_RETURN_ADDRESS    >>= (Zen.Data.tryPublicKey >> force)
+      providedAmount   = extract FIELD_PROVIDED_AMOUNT   >>= (Zen.Data.tryU64       >> force)
     }
 
 let generatePublicKey() =

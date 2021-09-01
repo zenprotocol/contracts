@@ -24,6 +24,7 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 600UL
     }
     test name
     <| valid_order_take_full odata
@@ -52,11 +53,12 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 600UL
     }
     test name
     <| valid_order_take_full odata
     |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        should_FAIL_with "Could not parse requestedPayout, or requestedPayout was 0"
+        should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
 
 let _ =
     let name  = "take order 100 ZP -> 0 XYZ"
@@ -71,11 +73,12 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 0UL
     }
     test name
     <| valid_order_take_full odata
     |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        should_FAIL_with "Could not parse OrderTotal, or OrderTotal was 0"
+        should_FAIL_with "Could not parse ProvidedAmount, or ProvidedAmount was 0"
 
 let _ =
     let name  = "take order 0 ZP -> 0 XYZ"
@@ -90,11 +93,12 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 0UL
     }
     test name
     <| valid_order_take_full odata
     |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        should_FAIL_with "Could not parse requestedPayout, or requestedPayout was 0"
+        should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 20% partial fill (20 ZP -> 120 XYZ)"
@@ -110,6 +114,7 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 120UL
     }
     test name
     <| valid_order_take_partial p odata
@@ -150,6 +155,7 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 600UL
     }
     test name
     <| valid_order_take_partial p odata
@@ -161,20 +167,7 @@ let _ =
                     orderTotal       = scale (100uy-p) odata.orderTotal
                 }
                 |> Option.map Consensus.Asset.toString in  
-        checkTx_should_FAIL
-            [ hasInput None            odata.underlyingAsset odata.underlyingAmount
-            ; hasOutput (lockPK taker) odata.underlyingAsset (scale p odata.underlyingAmount)
-            ; hasOutput lockContract   odata.underlyingAsset (scale (100uy-p) odata.underlyingAmount)
-            
-            ; hasInput None            odata.pairAsset       (scale p odata.orderTotal)
-            ; hasOutput (lockPK maker) odata.pairAsset       (scale p odata.orderTotal)
-            
-            ; hasInput lockContract    oldOrderAsset         (Some 1UL)
-            ; hasOutput lockDestroy    oldOrderAsset         (Some 1UL)
-            
-            ; hasMint                  newOrderAsset         (Some 1UL)
-            ; hasOutput lockContract   newOrderAsset         (Some 1UL)
-            ]
+        should_FAIL
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 20% partial fill (20 ZP -> 120 XYZ) (SANITY CHECK! - for modified tx)"
@@ -191,6 +184,7 @@ let _ =
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
             requestedPayout  = Some <| 20UL
+            providedAmount   = Some <| 120UL
     }
     test name
     <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
@@ -232,6 +226,7 @@ let _ =
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
             requestedPayout  = Some <| 21UL
+            providedAmount   = Some <| 120UL
     }
     test name
     <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
@@ -260,6 +255,7 @@ let _ =
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
             requestedPayout  = Some <| 19UL
+            providedAmount   = Some <| 120UL
     }
     test name
     <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
@@ -288,6 +284,7 @@ let _ =
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
             requestedPayout  = Some <| 0UL
+            providedAmount   = Some <| 120UL
     }
     test name
     <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
@@ -299,7 +296,7 @@ let _ =
                     orderTotal       = scale (100uy-p) odata.orderTotal
                 }
                 |> Option.map Consensus.Asset.toString in
-       should_FAIL_with "Could not parse requestedPayout, or requestedPayout was 0"
+       should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 20% partial fill and wrong requested payout (none)"
@@ -316,6 +313,7 @@ let _ =
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
             requestedPayout  = None
+            providedAmount   = Some <| 120UL
     }
     test name
     <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
@@ -327,7 +325,7 @@ let _ =
                     orderTotal       = scale (100uy-p) odata.orderTotal
                 }
                 |> Option.map Consensus.Asset.toString in
-       should_FAIL_with "Could not parse requestedPayout, or requestedPayout was 0"
+       should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ - (SANITY CHECK! - for modified wallet)"
@@ -342,6 +340,7 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 600UL
     }
     test name
     <| order_take_modified_wallet (odata.underlyingAmount, Some <| 0UL, Some <| 1UL) odata
@@ -370,6 +369,7 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 600UL
     }
     test name
     <| order_take_modified_wallet (None, None, None) odata
@@ -389,6 +389,7 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 600UL
     }
     test name
     <| order_take_modified_wallet (Some <| 99UL, Some <| 0UL, Some <| 1UL) odata
@@ -408,6 +409,7 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 600UL
     }
     test name
     <| order_take_modified_wallet (Some <| 100UL, Some <| 0UL, Some <| 0UL) odata
@@ -427,6 +429,7 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 600UL
     }
     test name
     <| order_take_modified_wallet (odata.underlyingAmount, Some <| 0UL, Some <| 5UL) odata
@@ -456,6 +459,7 @@ let _ =
             makerPubKey      = Some <| maker
             nonce            = Some <| 1UL
             returnAddress    = Some <| taker
+            providedAmount   = Some <| 600UL
     }
     test name
     <| order_take_modified_wallet (Some <| 9100UL, Some <| 9000UL, Some <| 9001UL) odata
