@@ -1,3 +1,4 @@
+module NamedToken
 
 open Zen.Types
 open Zen.Base
