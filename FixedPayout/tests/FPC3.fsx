@@ -109,6 +109,12 @@ let fpcMain, fpcCost = Load.extractMainAndCost "output/FixedPayout.dll"
 
 let OTHER_TOKEN_STRING = "00000000ea0491531b62de13d9760c6d9dd4046316080d1339daae5d2072811815c6bbe39597cfa4856a2863d63c554f0d9d81541f1de480af3709cd81f4a8d43f3aab8f"
 
+let test_counter = ref 1
+let tests = new System.Collections.Generic.Dictionary<int, string * TestResult<unit>>()
+
+let init_testing_environment() =
+    Execute.run_test tests test_counter
+
 
 
 (*
@@ -589,7 +595,7 @@ let _ =
 
 printfn "\n\n======================================== Issue ========================================================================="
 
-let mutable run_test = Execute.init_testing_environment()
+let mutable run_test = init_testing_environment()
 
 run_test "empty data & empty Tx"
     begin
@@ -956,7 +962,7 @@ let proof001 = {
     index       = ProofData.index;
 }
 
-run_test <- Execute.init_testing_environment()
+run_test <- init_testing_environment()
 
 run_test "valid Bull redemption (100 ZP)"
     begin
@@ -2639,7 +2645,7 @@ run_test "missing bet token (Bear)"
 
 printfn "\n\n======================================== Cancel ========================================================================"
 
-run_test <- Execute.init_testing_environment()
+run_test <- init_testing_environment()
 
 run_test "empty data & empty Tx"
     begin
@@ -2996,3 +3002,15 @@ run_test "valid data & 100 kalapas but no sender"
             None
     } |> should_FAIL_with "Sender can't be anonymous"
     end
+
+
+
+
+
+
+for test in tests do
+   match fst test.Value , Report.report (snd test.Value) with
+   | name , Ok _ ->
+      ()
+   | name , Error err ->
+      failwithf "Test %s failed with: %s" name err

@@ -74,6 +74,12 @@ let FIELD_RETURN_ADDRESS     = "ReturnAddress"B
 let fsToFstAsset (Types.Asset (Types.ContractId (version, assetType), subType)) = 
    (version, Hash.bytes assetType, Hash.bytes subType)
 
+let test_counter = ref 1
+let tests = new System.Collections.Generic.Dictionary<int, string * TestResult<unit>>()
+
+let init_testing_environment() =
+    Execute.run_test tests test_counter
+
 
 
 
@@ -386,7 +392,7 @@ let _ =
 
 printfn "\n\n======================================== Commit ========================================================================"
 
-let mutable run_test = Execute.init_testing_environment()
+let mutable run_test = init_testing_environment()
 
 run_test "valid commit - no OraclePubKey"
     begin
@@ -678,7 +684,7 @@ run_test "invalid commit - no sender"
 
 printfn "\n\n======================================== Attest ========================================================================"
 
-run_test <- Execute.init_testing_environment()
+run_test <- init_testing_environment()
 
 run_test "valid attest - no recipient (attestation token should be sent to sender)"
     begin
@@ -1462,3 +1468,14 @@ run_test "valid attest - with FeeAmount and FeeAsset specified, sufficient fee, 
             ]
             ocRealizer
     end
+
+
+
+
+
+for test in tests do
+   match fst test.Value , Report.report (snd test.Value) with
+   | name , Ok _ ->
+      ()
+   | name , Error err ->
+      failwithf "Test %s failed with: %s" name err

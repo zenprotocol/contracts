@@ -3,13 +3,13 @@
 open Dex
 open System
 
-let tests = new System.Collections.Generic.Dictionary<int, string * CR>()
+let tests = new System.Collections.Generic.Dictionary<int, string * Result<unit,string>>()
 let test_counter = ref 1
 
 let test = run_test tests test_counter
 
 test "valid Make order - 100 ZP -> 100 ZP"
-    <| valid_order_make {
+    begin valid_order_make {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -19,9 +19,10 @@ test "valid Make order - 100 ZP -> 100 ZP"
         nonce            = Some <| 1UL
     }
     |> should_PASS
+    end
 
 test "valid Make order - 100 ZP -> 5 ZP"
-    <| valid_order_make {
+    begin valid_order_make {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -30,10 +31,11 @@ test "valid Make order - 100 ZP -> 5 ZP"
         makerPubKey      = Some <| generatePublicKey()
         nonce            = Some <| 1UL
     }
-    |> should_PASS 
+    |> should_PASS
+    end
 
 test "valid Make order - 100 ZP -> 5 XYZ"
-    <| valid_order_make {
+    begin valid_order_make {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -43,9 +45,10 @@ test "valid Make order - 100 ZP -> 5 XYZ"
         nonce            = Some <| 1UL
     }
     |> should_PASS
+    end
 
 test "Valid Make order - 5 XYZ -> 100 ZP" 
-    <| valid_order_make {
+    begin valid_order_make {
     odataDefault with
         underlyingAsset  = Some <| XYZ_ASSET
         underlyingAmount = Some <| 5UL
@@ -55,9 +58,10 @@ test "Valid Make order - 5 XYZ -> 100 ZP"
         nonce            = Some <| 1UL
     }
     |> should_PASS 
+    end
 
 test "0 underying amount" 
-    <| valid_order_make {
+    begin valid_order_make {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 0UL
@@ -67,9 +71,10 @@ test "0 underying amount"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Could not parse UnderlyingAmount, or UnderlyingAmount was 0"
+    end
 
 test "0 pair amount" 
-    <| valid_order_make {
+    begin valid_order_make {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -79,9 +84,10 @@ test "0 pair amount"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Could not parse OrderTotal, or OrderTotal was 0"
+    end
 
 test "0 underlying & pair amount" 
-    <| valid_order_make {
+    begin valid_order_make {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 0UL
@@ -91,9 +97,10 @@ test "0 underlying & pair amount"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Could not parse UnderlyingAmount, or UnderlyingAmount was 0"
+    end
  
 test "no underlying asset in body" 
-    <| order_make_modified_tx [ZEN_ASSET, 100UL] {
+    begin order_make_modified_tx [ZEN_ASSET, 100UL] {
     odataDefault with
         underlyingAsset  = None
         underlyingAmount = Some <| 100UL
@@ -103,9 +110,10 @@ test "no underlying asset in body"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Could not parse UnderlyingAsset"
+    end
  
 test "no underlying amount in body" 
-    <| order_make_modified_tx [ZEN_ASSET, 100UL] {
+    begin order_make_modified_tx [ZEN_ASSET, 100UL] {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = None
@@ -115,9 +123,10 @@ test "no underlying amount in body"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Could not parse UnderlyingAmount, or UnderlyingAmount was 0"
+    end
 
 test "no underlying asset & amount in body" 
-    <| order_make_modified_tx [ZEN_ASSET, 100UL] {
+    begin order_make_modified_tx [ZEN_ASSET, 100UL] {
     odataDefault with
         underlyingAsset  = None
         underlyingAmount = None
@@ -127,9 +136,10 @@ test "no underlying asset & amount in body"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Could not parse UnderlyingAsset"
+    end
 
 test "empty tx"
-    <| order_make_modified_tx [] {
+    begin order_make_modified_tx [] {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -139,9 +149,10 @@ test "empty tx"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Incorrect amount of UnderlyingAsset Received"
+    end
 
 test "composite tx"
-    <| order_make_modified_tx [(XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL)] {
+    begin order_make_modified_tx [(XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL); (ZEN_ASSET, 50UL); (XYZ_ASSET, 5UL)] {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -151,9 +162,10 @@ test "composite tx"
         nonce            = Some <| 1UL
     }
     |> should_PASS
+    end
 
 test "incorrect asset in tx"
-    <| order_make_modified_tx [XYZ_ASSET, 100UL] {
+    begin order_make_modified_tx [XYZ_ASSET, 100UL] {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -163,9 +175,10 @@ test "incorrect asset in tx"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Incorrect amount of UnderlyingAsset Received"
+    end
 
 test "incorrect amount in tx (amount too small)"
-    <| order_make_modified_tx [ZEN_ASSET, 99UL] {
+    begin order_make_modified_tx [ZEN_ASSET, 99UL] {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -175,10 +188,11 @@ test "incorrect amount in tx (amount too small)"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Incorrect amount of UnderlyingAsset Received"
+    end
 
 
 test "incorrect amount in tx (amount too big)"
-    <| order_make_modified_tx [ZEN_ASSET, 101UL] {
+    begin order_make_modified_tx [ZEN_ASSET, 101UL] {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -188,9 +202,10 @@ test "incorrect amount in tx (amount too big)"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "Incorrect amount of UnderlyingAsset Received"
+    end
 
 test "wrong maker"
-    <| order_make_modified_sender (generatePublicKey()) {
+    begin order_make_modified_sender (generatePublicKey()) {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -200,9 +215,10 @@ test "wrong maker"
         nonce            = Some <| 1UL
     }
     |> should_FAIL_with "SenderPubKey must match MakerPubKey"
+    end
 
 test "nonempty wallet"
-    <| order_make_modified_wallet (Some 100UL, Some 600UL, Some 10UL) {
+    begin order_make_modified_wallet (Some 100UL, Some 600UL, Some 10UL) {
     odataDefault with
         underlyingAsset  = Some <| ZEN_ASSET
         underlyingAmount = Some <| 100UL
@@ -212,3 +228,15 @@ test "nonempty wallet"
         nonce            = Some <| 1UL
     }
     |> should_PASS
+    end
+
+
+
+
+
+for test in tests do
+   match fst test.Value , snd test.Value with
+   | name , Ok _ ->
+      ()
+   | name , Error err ->
+      failwithf "Test %s failed with: %s" name err

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 RLIMIT=800000000
 

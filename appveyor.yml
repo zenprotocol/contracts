@@ -18,7 +18,10 @@ install:
   - npm install @zen/zebra -g
 
 build: off
-shallow_clone: true  
+shallow_clone: true
+matrix:
+  # stop build on first failure
+  fast_finish: true
 
 test_script:
   - sh run-test.sh

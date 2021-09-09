@@ -131,6 +131,13 @@ and mkOutput (output : Abs.AbsPointedOutput<cgpPK, cgpCid, cgpAsset>) : Data.dat
             [] |> ZFStar.fsToFstList |> Data.List |> Data.Collection
 
 
+let test_counter = ref 1
+let tests = new System.Collections.Generic.Dictionary<int, string * TestResult<unit>>()
+
+let init_testing_environment() =
+    Execute.run_test tests test_counter
+
+
 
 (*
 ------------------------------------------------------------------------------------------------------------------------
@@ -140,7 +147,7 @@ and mkOutput (output : Abs.AbsPointedOutput<cgpPK, cgpCid, cgpAsset>) : Data.dat
 
 printfn "\n\n======================================== Payout ==========================================================================="
 
-let mutable run_test = Execute.init_testing_environment()
+let mutable run_test = init_testing_environment()
 
 run_test "empty data & empty Tx"
     begin
@@ -527,3 +534,16 @@ run_test "spend of 100 ZP, 50 Asset_1, 75 Asset_2, 30 Asset_3 - in wallet 200 ZP
             None
     } |> should_FAIL_with "Insufficient funds"
     end
+
+
+
+
+
+
+
+for test in tests do
+   match fst test.Value , Report.report (snd test.Value) with
+   | name , Ok _ ->
+      ()
+   | name , Error err ->
+      failwithf "Test %s failed with: %s" name err

@@ -4,7 +4,7 @@ module Types = Consensus.Types
 
 open Dex
 
-let tests = new System.Collections.Generic.Dictionary<int, string * CR>()
+let tests = new System.Collections.Generic.Dictionary<int, string * Result<unit,string>>()
 let test_counter = ref 1
 
 let test = run_test tests test_counter
@@ -27,18 +27,19 @@ let _ =
             providedAmount   = Some <| 600UL
     }
     test name
-    <| valid_order_take_full odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        checkTx
-            [ hasInput None            odata.underlyingAsset odata.underlyingAmount
-            ; hasOutput (lockPK taker) odata.underlyingAsset odata.underlyingAmount
-            
-            ; hasInput None            odata.pairAsset       odata.orderTotal
-            ; hasOutput (lockPK maker) odata.pairAsset       odata.orderTotal
-            
-            ; hasInput lockContract    orderAsset            (Some 1UL)
-            ; hasOutput lockDestroy    orderAsset            (Some 1UL)
-            ]
+        begin valid_order_take_full odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            checkTx
+                [ hasInput None            odata.underlyingAsset odata.underlyingAmount
+                ; hasOutput (lockPK taker) odata.underlyingAsset odata.underlyingAmount
+                
+                ; hasInput None            odata.pairAsset       odata.orderTotal
+                ; hasOutput (lockPK maker) odata.pairAsset       odata.orderTotal
+                
+                ; hasInput lockContract    orderAsset            (Some 1UL)
+                ; hasOutput lockDestroy    orderAsset            (Some 1UL)
+                ]
+        end
 
 let _ =
     let name  = "take order 0 ZP -> 600 XYZ"
@@ -56,9 +57,10 @@ let _ =
             providedAmount   = Some <| 600UL
     }
     test name
-    <| valid_order_take_full odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
+        begin valid_order_take_full odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 0 XYZ"
@@ -76,9 +78,10 @@ let _ =
             providedAmount   = Some <| 0UL
     }
     test name
-    <| valid_order_take_full odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        should_FAIL_with "Could not parse ProvidedAmount, or ProvidedAmount was 0"
+        begin valid_order_take_full odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            should_FAIL_with "Could not parse ProvidedAmount, or ProvidedAmount was 0"
+        end
 
 let _ =
     let name  = "take order 0 ZP -> 0 XYZ"
@@ -96,9 +99,10 @@ let _ =
             providedAmount   = Some <| 0UL
     }
     test name
-    <| valid_order_take_full odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
+        begin valid_order_take_full odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 20% partial fill (20 ZP -> 120 XYZ)"
@@ -117,29 +121,30 @@ let _ =
             providedAmount   = Some <| 120UL
     }
     test name
-    <| valid_order_take_partial p odata
-    |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-       let newOrderAsset =
-            computeOrderAsset
-                { odata with
-                    underlyingAmount = scale (100uy-p) odata.underlyingAmount
-                    orderTotal       = scale (100uy-p) odata.orderTotal
-                }
-                |> Option.map Consensus.Asset.toString in
-       checkTx
-            [ hasInput None            odata.underlyingAsset odata.underlyingAmount
-            ; hasOutput (lockPK taker) odata.underlyingAsset (scale p odata.underlyingAmount)
-            ; hasOutput lockContract   odata.underlyingAsset (scale (100uy-p) odata.underlyingAmount)
-            
-            ; hasInput None            odata.pairAsset       (scale p odata.orderTotal)
-            ; hasOutput (lockPK maker) odata.pairAsset       (scale p odata.orderTotal)
-            
-            ; hasInput lockContract    oldOrderAsset         (Some 1UL)
-            ; hasOutput lockDestroy    oldOrderAsset         (Some 1UL)
-            
-            ; hasMint                  newOrderAsset         (Some 1UL)
-            ; hasOutput lockContract   newOrderAsset         (Some 1UL)
-            ]
+        begin valid_order_take_partial p odata
+        |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+        let newOrderAsset =
+                computeOrderAsset
+                    { odata with
+                        underlyingAmount = scale (100uy-p) odata.underlyingAmount
+                        orderTotal       = scale (100uy-p) odata.orderTotal
+                    }
+                    |> Option.map Consensus.Asset.toString in
+        checkTx
+                [ hasInput None            odata.underlyingAsset odata.underlyingAmount
+                ; hasOutput (lockPK taker) odata.underlyingAsset (scale p odata.underlyingAmount)
+                ; hasOutput lockContract   odata.underlyingAsset (scale (100uy-p) odata.underlyingAmount)
+                
+                ; hasInput None            odata.pairAsset       (scale p odata.orderTotal)
+                ; hasOutput (lockPK maker) odata.pairAsset       (scale p odata.orderTotal)
+                
+                ; hasInput lockContract    oldOrderAsset         (Some 1UL)
+                ; hasOutput lockDestroy    oldOrderAsset         (Some 1UL)
+                
+                ; hasMint                  newOrderAsset         (Some 1UL)
+                ; hasOutput lockContract   newOrderAsset         (Some 1UL)
+                ]
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 110% partial fill (110 ZP -> 660 XYZ)"
@@ -158,16 +163,17 @@ let _ =
             providedAmount   = Some <| 600UL
     }
     test name
-    <| valid_order_take_partial p odata
-    |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-       let newOrderAsset =
-            computeOrderAsset
-                { odata with
-                    underlyingAmount = scale (100uy-p) odata.underlyingAmount
-                    orderTotal       = scale (100uy-p) odata.orderTotal
-                }
-                |> Option.map Consensus.Asset.toString in  
-        should_FAIL
+        begin valid_order_take_partial p odata
+        |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+        let newOrderAsset =
+                computeOrderAsset
+                    { odata with
+                        underlyingAmount = scale (100uy-p) odata.underlyingAmount
+                        orderTotal       = scale (100uy-p) odata.orderTotal
+                    }
+                    |> Option.map Consensus.Asset.toString in  
+            should_FAIL  
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 20% partial fill (20 ZP -> 120 XYZ) (SANITY CHECK! - for modified tx)"
@@ -187,29 +193,30 @@ let _ =
             providedAmount   = Some <| 120UL
     }
     test name
-    <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
-    |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-       let newOrderAsset =
-            computeOrderAsset
-                { odata with
-                    underlyingAmount = scale (100uy-p) odata.underlyingAmount
-                    orderTotal       = scale (100uy-p) odata.orderTotal
-                }
-                |> Option.map Consensus.Asset.toString in
-       checkTx
-            [ hasInput None            odata.underlyingAsset odata.underlyingAmount
-            ; hasOutput (lockPK taker) odata.underlyingAsset (scale p odata.underlyingAmount)
-            ; hasOutput lockContract   odata.underlyingAsset (scale (100uy-p) odata.underlyingAmount)
-            
-            ; hasInput None            odata.pairAsset       (scale p odata.orderTotal)
-            ; hasOutput (lockPK maker) odata.pairAsset       (scale p odata.orderTotal)
-            
-            ; hasInput lockContract    oldOrderAsset         (Some 1UL)
-            ; hasOutput lockDestroy    oldOrderAsset         (Some 1UL)
-            
-            ; hasMint                  newOrderAsset         (Some 1UL)
-            ; hasOutput lockContract   newOrderAsset         (Some 1UL)
-            ]
+        begin order_take_modified_tx [XYZ_ASSET, 120UL] odata
+        |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+        let newOrderAsset =
+                computeOrderAsset
+                    { odata with
+                        underlyingAmount = scale (100uy-p) odata.underlyingAmount
+                        orderTotal       = scale (100uy-p) odata.orderTotal
+                    }
+                    |> Option.map Consensus.Asset.toString in
+        checkTx
+                [ hasInput None            odata.underlyingAsset odata.underlyingAmount
+                ; hasOutput (lockPK taker) odata.underlyingAsset (scale p odata.underlyingAmount)
+                ; hasOutput lockContract   odata.underlyingAsset (scale (100uy-p) odata.underlyingAmount)
+                
+                ; hasInput None            odata.pairAsset       (scale p odata.orderTotal)
+                ; hasOutput (lockPK maker) odata.pairAsset       (scale p odata.orderTotal)
+                
+                ; hasInput lockContract    oldOrderAsset         (Some 1UL)
+                ; hasOutput lockDestroy    oldOrderAsset         (Some 1UL)
+                
+                ; hasMint                  newOrderAsset         (Some 1UL)
+                ; hasOutput lockContract   newOrderAsset         (Some 1UL)
+                ]
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 20% partial fill and wrong requested payout (too much)"
@@ -229,16 +236,17 @@ let _ =
             providedAmount   = Some <| 120UL
     }
     test name
-    <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
-    |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-       let newOrderAsset =
-            computeOrderAsset
-                { odata with
-                    underlyingAmount = scale (100uy-p) odata.underlyingAmount
-                    orderTotal       = scale (100uy-p) odata.orderTotal
-                }
-                |> Option.map Consensus.Asset.toString in
-       should_FAIL_with "Incorrect requestedPayout"
+        begin order_take_modified_tx [XYZ_ASSET, 120UL] odata
+        |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+        let newOrderAsset =
+                computeOrderAsset
+                    { odata with
+                        underlyingAmount = scale (100uy-p) odata.underlyingAmount
+                        orderTotal       = scale (100uy-p) odata.orderTotal
+                    }
+                    |> Option.map Consensus.Asset.toString in
+        should_FAIL_with "Incorrect requestedPayout"
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 20% partial fill and wrong requested payout (not enough)"
@@ -258,16 +266,17 @@ let _ =
             providedAmount   = Some <| 120UL
     }
     test name
-    <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
-    |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-       let newOrderAsset =
-            computeOrderAsset
-                { odata with
-                    underlyingAmount = scale (100uy-p) odata.underlyingAmount
-                    orderTotal       = scale (100uy-p) odata.orderTotal
-                }
-                |> Option.map Consensus.Asset.toString in
-       should_FAIL_with "Incorrect requestedPayout"
+        begin order_take_modified_tx [XYZ_ASSET, 120UL] odata
+        |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+        let newOrderAsset =
+                computeOrderAsset
+                    { odata with
+                        underlyingAmount = scale (100uy-p) odata.underlyingAmount
+                        orderTotal       = scale (100uy-p) odata.orderTotal
+                    }
+                    |> Option.map Consensus.Asset.toString in
+        should_FAIL_with "Incorrect requestedPayout"
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 20% partial fill and wrong requested payout (0)"
@@ -287,16 +296,17 @@ let _ =
             providedAmount   = Some <| 120UL
     }
     test name
-    <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
-    |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-       let newOrderAsset =
-            computeOrderAsset
-                { odata with
-                    underlyingAmount = scale (100uy-p) odata.underlyingAmount
-                    orderTotal       = scale (100uy-p) odata.orderTotal
-                }
-                |> Option.map Consensus.Asset.toString in
-       should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
+        begin order_take_modified_tx [XYZ_ASSET, 120UL] odata
+        |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+        let newOrderAsset =
+                computeOrderAsset
+                    { odata with
+                        underlyingAmount = scale (100uy-p) odata.underlyingAmount
+                        orderTotal       = scale (100uy-p) odata.orderTotal
+                    }
+                    |> Option.map Consensus.Asset.toString in
+        should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ with 20% partial fill and wrong requested payout (none)"
@@ -316,16 +326,17 @@ let _ =
             providedAmount   = Some <| 120UL
     }
     test name
-    <| order_take_modified_tx [XYZ_ASSET, 120UL] odata
-    |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-       let newOrderAsset =
-            computeOrderAsset
-                { odata with
-                    underlyingAmount = scale (100uy-p) odata.underlyingAmount
-                    orderTotal       = scale (100uy-p) odata.orderTotal
-                }
-                |> Option.map Consensus.Asset.toString in
-       should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
+        begin order_take_modified_tx [XYZ_ASSET, 120UL] odata
+        |> let oldOrderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+        let newOrderAsset =
+                computeOrderAsset
+                    { odata with
+                        underlyingAmount = scale (100uy-p) odata.underlyingAmount
+                        orderTotal       = scale (100uy-p) odata.orderTotal
+                    }
+                    |> Option.map Consensus.Asset.toString in
+        should_FAIL_with "Could not parse RequestedPayout, or RequestedPayout was 0"
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ - (SANITY CHECK! - for modified wallet)"
@@ -343,18 +354,19 @@ let _ =
             providedAmount   = Some <| 600UL
     }
     test name
-    <| order_take_modified_wallet (odata.underlyingAmount, Some <| 0UL, Some <| 1UL) odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        checkTx
-            [ hasInput None            odata.underlyingAsset odata.underlyingAmount
-            ; hasOutput (lockPK taker) odata.underlyingAsset odata.underlyingAmount
-            
-            ; hasInput None            odata.pairAsset       odata.orderTotal
-            ; hasOutput (lockPK maker) odata.pairAsset       odata.orderTotal
-            
-            ; hasInput lockContract    orderAsset            (Some 1UL)
-            ; hasOutput lockDestroy    orderAsset            (Some 1UL)
-            ]
+        begin order_take_modified_wallet (odata.underlyingAmount, Some <| 0UL, Some <| 1UL) odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            checkTx
+                [ hasInput None            odata.underlyingAsset odata.underlyingAmount
+                ; hasOutput (lockPK taker) odata.underlyingAsset odata.underlyingAmount
+                
+                ; hasInput None            odata.pairAsset       odata.orderTotal
+                ; hasOutput (lockPK maker) odata.pairAsset       odata.orderTotal
+                
+                ; hasInput lockContract    orderAsset            (Some 1UL)
+                ; hasOutput lockDestroy    orderAsset            (Some 1UL)
+                ]
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ - empty wallet"
@@ -372,9 +384,10 @@ let _ =
             providedAmount   = Some <| 600UL
     }
     test name
-    <| order_take_modified_wallet (None, None, None) odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        should_FAIL
+        begin order_take_modified_wallet (None, None, None) odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            should_FAIL
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ - not enough underlying in wallet"
@@ -392,9 +405,10 @@ let _ =
             providedAmount   = Some <| 600UL
     }
     test name
-    <| order_take_modified_wallet (Some <| 99UL, Some <| 0UL, Some <| 1UL) odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        should_FAIL
+        begin order_take_modified_wallet (Some <| 99UL, Some <| 0UL, Some <| 1UL) odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            should_FAIL
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ - 0 order token in wallet"
@@ -412,9 +426,10 @@ let _ =
             providedAmount   = Some <| 600UL
     }
     test name
-    <| order_take_modified_wallet (Some <| 100UL, Some <| 0UL, Some <| 0UL) odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        should_FAIL
+        begin order_take_modified_wallet (Some <| 100UL, Some <| 0UL, Some <| 0UL) odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            should_FAIL
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ - more than 1 order token"
@@ -432,19 +447,20 @@ let _ =
             providedAmount   = Some <| 600UL
     }
     test name
-    <| order_take_modified_wallet (odata.underlyingAmount, Some <| 0UL, Some <| 5UL) odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        checkTx
-            [ hasInput  None           odata.underlyingAsset odata.underlyingAmount
-            ; hasOutput (lockPK taker) odata.underlyingAsset odata.underlyingAmount
-            
-            ; hasInput  None           odata.pairAsset       odata.orderTotal
-            ; hasOutput (lockPK maker) odata.pairAsset       odata.orderTotal
-            
-            ; hasInput  lockContract   orderAsset            (Some 5UL)
-            ; hasOutput lockContract   orderAsset            (Some 4UL)
-            ; hasOutput lockDestroy    orderAsset            (Some 1UL)
-            ]
+        begin order_take_modified_wallet (odata.underlyingAmount, Some <| 0UL, Some <| 5UL) odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            checkTx
+                [ hasInput  None           odata.underlyingAsset odata.underlyingAmount
+                ; hasOutput (lockPK taker) odata.underlyingAsset odata.underlyingAmount
+                
+                ; hasInput  None           odata.pairAsset       odata.orderTotal
+                ; hasOutput (lockPK maker) odata.pairAsset       odata.orderTotal
+                
+                ; hasInput  lockContract   orderAsset            (Some 5UL)
+                ; hasOutput lockContract   orderAsset            (Some 4UL)
+                ; hasOutput lockDestroy    orderAsset            (Some 1UL)
+                ]
+        end
 
 let _ =
     let name  = "take order 100 ZP -> 600 XYZ - wallet with surplus"
@@ -462,17 +478,28 @@ let _ =
             providedAmount   = Some <| 600UL
     }
     test name
-    <| order_take_modified_wallet (Some <| 9100UL, Some <| 9000UL, Some <| 9001UL) odata
-    |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
-        checkTx
-            [ hasInput  None           odata.underlyingAsset (Some 9100UL)
-            ; hasOutput (lockPK taker) odata.underlyingAsset (Some  100UL)
-            ; hasOutput lockContract   odata.underlyingAsset (Some 9000UL)
-            
-            ; hasInput  None           odata.pairAsset       odata.orderTotal
-            ; hasOutput (lockPK maker) odata.pairAsset       odata.orderTotal
-            
-            ; hasInput  lockContract   orderAsset            (Some 9001UL)
-            ; hasOutput lockContract   orderAsset            (Some 9000UL)
-            ; hasOutput lockDestroy    orderAsset            (Some 1UL)
-            ]
+        begin order_take_modified_wallet (Some <| 9100UL, Some <| 9000UL, Some <| 9001UL) odata
+        |> let orderAsset = computeOrderAsset odata |> Option.map Consensus.Asset.toString in
+            checkTx
+                [ hasInput  None           odata.underlyingAsset (Some 9100UL)
+                ; hasOutput (lockPK taker) odata.underlyingAsset (Some  100UL)
+                ; hasOutput lockContract   odata.underlyingAsset (Some 9000UL)
+                
+                ; hasInput  None           odata.pairAsset       odata.orderTotal
+                ; hasOutput (lockPK maker) odata.pairAsset       odata.orderTotal
+                
+                ; hasInput  lockContract   orderAsset            (Some 9001UL)
+                ; hasOutput lockContract   orderAsset            (Some 9000UL)
+                ; hasOutput lockDestroy    orderAsset            (Some 1UL)
+                ]
+        end
+
+
+
+
+for test in tests do
+   match fst test.Value , snd test.Value with
+   | name , Ok _ ->
+      ()
+   | name , Error err ->
+      failwithf "Test %s failed with: %s" name err

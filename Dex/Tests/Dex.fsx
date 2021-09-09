@@ -117,7 +117,7 @@ let sequenceA xs = Infrastructure.Option.traverseA id xs
 let disp s x = printfn "\n%s" s; x
 let dispf s x = printfn s x; x
 
-let run_test (tests : System.Collections.Generic.Dictionary<int, string * CR>) (counter : int ref) s x =
+let run_test (tests : System.Collections.Generic.Dictionary<int, string * Result<unit,string>>) (counter : int ref) s x =
     printfn "\n\u2B24 (%d) - %s:" !counter s;
     tests.Add(!counter, (s,x));
     counter := !counter + 1
@@ -159,17 +159,20 @@ let wrap_dbox =
     wrap "\u2554" "\u2557" "\u255A" "\u255D" "\u2550" "\u2551"  
 
 let pass() =
-    printfn "  \u2705 PASSED"
+    printfn "  \u2705 PASSED";
+    Ok ()
 //    let msg = sprintf "\u2705 PASSED"
 //    wrap_invisible 1 msg
 
 let passWith e =
-    printfn "  \u2705 PASSED with error: %A" e
+    printfn "  \u2705 PASSED with error: %A" e;
+    Ok ()
 //    let msg = sprintf "\u2705 PASSED with error: %A" e
 //    wrap_invisible 1 msg
 
 let failWith e =
-    printfn "  \u26D4 FAILED with error: %A" e
+    printfn "  \u26D4 FAILED with error: %A" e;
+    Error e
 //    let msg = sprintf "\u26D4 FAILED with error: %A \u26D4" e
 //    wrap_invisible 1 msg
 //    wrap_box 2 msg
@@ -181,13 +184,11 @@ let should_PASS x =
     match x with
     | Ok _    -> pass()
     | Error e -> failWith e
-    x
     
 let should_FAIL x =
     match x with
     | Ok _    -> failWith UNEXPECTED_SUCCESS
     | Error e -> passWith e
-    x
     
 let should_FAIL_with err x =
     match x with
@@ -196,7 +197,6 @@ let should_FAIL_with err x =
         if e = err
             then passWith e
             else failWith e
-    x
 
 (* QUERY RESULT *)
 
@@ -232,10 +232,10 @@ let renderTxError (e : TxFailure) : string =
     | MissingOutput t -> sprintf "missing output: %s" (rtup t)
     | MissingMint t -> sprintf "missing mint: %s" (rmnt t)
 
-let checkTx (tests : (TxSkeleton -> Result<unit, TxFailure>) list) (cr : CR) : unit  =
+let checkTx (tests : (TxSkeleton -> Result<unit, TxFailure>) list) (cr : CR) : Result<unit, string>  =
     match checkTx' tests cr with
     | Ok() -> pass()
-    | Error (TxFailure es) -> List.map (renderTxError >> failWith) es |> ignore
+    | Error (TxFailure es) -> List.map (renderTxError >> failWith) es |> ignore; Ok()
     | Error (ExecutionFailure e) -> failWith e
 
 let hasInput (lock : Types.Lock option) (asset : string option) (amount : uint64 option) (tx : TxSkeleton) : Result<unit,TxFailure> =
