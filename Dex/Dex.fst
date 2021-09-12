@@ -1,4 +1,4 @@
-module Dex001
+module Dex
 
 open Zen.Cost
 open Zen.Data

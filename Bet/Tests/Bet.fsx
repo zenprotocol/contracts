@@ -1,5 +1,3 @@
-module Bet
-
 module Asset = Consensus.Asset
 module Contract = Consensus.Contract
 module ContractId = Consensus.ContractId
@@ -114,7 +112,7 @@ let bearHex = "42656172"
 let subTokenFromHex (hex: string): Types.Asset =
     let subTokenID = hex.PadRight(2 * Hash.Length, '0')
                      |> Hash.fromString
-                     |> Result.get
+                     |> Option.get
     Types.Asset (contractID, subTokenID)
 
 let zp = Asset.Zen
@@ -127,7 +125,7 @@ let returnAddress = Types.PK returnAddressPK
                     |> Consensus.ZFStar.fsToFstLock
                     |> Zen.Types.Data.Lock
 
-let emptyDict = Zen.Dictionary.empty
+let emptyDict = Zen.Dictionary.empty()
 let addToDict (key, value) dict = Zen.Dictionary.add key value dict
                                   |> Zen.Cost.Realized.__force
 let addU64 (key, value) = addToDict (key, Zen.Types.Data.U64 value)
@@ -142,14 +140,14 @@ let mkData returnAddress price =
 
 // a messageBody consisting of only a return address
 let onlyReturnAddress =
-    Zen.Dictionary.add "returnAddress"B returnAddress Zen.Dictionary.empty
+    Zen.Dictionary.add "returnAddress"B returnAddress (Zen.Dictionary.empty())
     |> Zen.Cost.Realized.__force
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
 
 let onlyPrice =
-    addU64 ("Price"B, strike) Zen.Dictionary.empty
+    addU64 ("Price"B, strike) (Zen.Dictionary.empty())
     |> Zen.Types.Data.Dict
     |> Zen.Types.Data.Collection
     |> Some
