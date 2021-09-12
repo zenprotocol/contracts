@@ -1,9 +1,5 @@
 image: Ubuntu1804
 
-branches:
-  only:
-  - appveyor-test
-
 environment:
   matrix:
     - nodejs_version: '14'
